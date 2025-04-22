@@ -6,7 +6,7 @@ SPDX-License-Identifier: Apache-2.0
 #pragma once
 #include <stdint.h>
 
-#include "../src/alloc.h"
+#include "../../pixenals-alloc-utils/include/pixenals_alloc_utils.h"
 
 typedef struct {
 	void *file;

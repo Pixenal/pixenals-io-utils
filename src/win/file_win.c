@@ -7,7 +7,7 @@ SPDX-License-Identifier: Apache-2.0
 #include <stdbool.h>
 #include <stdio.h>
 
-#include <platform_io.h>
+#include <pixenals_io_utils.h>
 
 #define ERR_MESSAGE_MAX_LEN 128
 
