@@ -27,3 +27,4 @@ PixErr pixioFileGetSize(void *pFile, int64_t *pSize);
 PixErr pixioFileWrite(void *pFile, const unsigned char *data, int32_t dataSize);
 PixErr pixioFileRead(void *pFile, unsigned char *data, int32_t bytesToRead);
 PixErr pixioFileClose(void *pFile);
+int32_t pixioPathMaxGet();
