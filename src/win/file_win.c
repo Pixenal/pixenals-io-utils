@@ -140,5 +140,5 @@ PixErr pixioFileClose(void *pFile) {
 }
 
 int32_t pixioPathMaxGet() {
-	return MAX_PATH;
+	return PIXIO_PATH_MAX;
 }

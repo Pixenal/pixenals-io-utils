@@ -8,6 +8,8 @@ SPDX-License-Identifier: Apache-2.0
 
 #include "../../pixenals-alloc-utils/include/pixenals_alloc_utils.h"
 
+#define PIXIO_PATH_MAX 32768
+
 typedef struct {
 	void *file;
 } PixioFile;
