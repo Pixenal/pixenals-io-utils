@@ -5,52 +5,64 @@ SPDX-License-Identifier: Apache-2.0
 
 #include <stdio.h>
 
-#include "platform_io.h"
-#include <error.h>
+#include <sys/stat.h>
 
-typedef struct {
+#include <pixenals_io_utils.h>
+
+typedef int32_t I32;
+
+typedef struct PlatformContext{
 	FILE *pFile;
-	const StucAlloc *pAlloc;
+	PixalcFPtrs alloc;
 } PlatformContext;
 
-StucResult stucPlatformFileOpen(
-	void **file,
-	const char *filePath,
-	StucFileOpenType action,
-	const StucAlloc *pAlloc
+PixErr pixioFileOpen(
+	void **ppFile,
+	const char *pFilePath,
+	PixioFileOpenType action,
+	const PixalcFPtrs *pAlloc
 ) {
-	StucResult err = STUC_SUCCESS;
-	STUC_ASSERT("", file && filePath && pAlloc);
-	STUC_ASSERT("", action == 0 || action == 1);
+	PixErr err = PIX_ERR_SUCCESS;
+	PIX_ERR_ASSERT("", ppFile && pFilePath && pAlloc);
+	PIX_ERR_ASSERT("", action == 0 || action == 1);
 	char *mode = "  ";
 	switch (action) {
-		case STUC_FILE_OPEN_WRITE:
+		case PIX_IO_FILE_OPEN_WRITE:
 			mode = "wb";
 			break;
-		case STUC_FILE_OPEN_READ:
+		case PIX_IO_FILE_OPEN_READ:
 			mode = "rb";
 			break;
 		default:
-			STUC_RETURN_ERR(err, "Invalid action passed to function\n");
+			PIX_ERR_RETURN(err, "Invalid action passed to function\n");
 	}
 	PlatformContext *pState = pAlloc->fpMalloc(sizeof(PlatformContext));
-	*file = pState;
-	pState->pAlloc = pAlloc;
-	pState->pFile = fopen(filePath, mode);
-	STUC_RETURN_ERR_IFNOT_COND(err, pState->pFile, "");
+	*ppFile = pState;
+	pState->alloc = *pAlloc;
+	pState->pFile = fopen(pFilePath, mode);
+	PIX_ERR_RETURN_IFNOT_COND(err, pState->pFile, "");
 	return err;
 }
 
-StucResult stucPlatformFileWrite(
-	void *file,
-	const unsigned char *data,
+PixErr pixioFileGetSize(void *pFile, int64_t *pSize) {
+	PixErr err = PIX_ERR_SUCCESS;
+	PlatformContext *pState = pFile;
+	struct stat info;
+	PIX_ERR_RETURN_IFNOT_COND(err, fstat(pState->pFile->_fileno, &info) != -1, "");
+	*pSize = info.st_size;
+	return err;
+}
+
+PixErr pixioFileWrite(
+	void *pFile,
+	const unsigned char *pData,
 	I32 dataSize
 ) {
-	StucResult err = STUC_SUCCESS;
-	PlatformContext *pState = file;
-	STUC_ASSERT("", pState && pState->pFile && data && dataSize > 0);
-	int32_t bytesWritten = fwrite(data, 1, dataSize, pState->pFile);
-	STUC_RETURN_ERR_IFNOT_COND(
+	PixErr err = PIX_ERR_SUCCESS;
+	PlatformContext *pState = pFile;
+	PIX_ERR_ASSERT("", pState && pState->pFile && pData && dataSize > 0);
+	I32 bytesWritten = fwrite(pData, 1, dataSize, pState->pFile);
+	PIX_ERR_RETURN_IFNOT_COND(
 		err,
 		bytesWritten == dataSize,
 		"Number of bytes read does not match data len"
@@ -58,16 +70,16 @@ StucResult stucPlatformFileWrite(
 	return err;
 }
 
-StucResult stucPlatformFileRead(
-	void *file,
-	unsigned char *data,
+PixErr pixioFileRead(
+	void *pFile,
+	unsigned char *pData,
 	I32 bytesToRead
 ) {
-	StucResult err = STUC_SUCCESS;
-	PlatformContext *pState = file;
-	STUC_ASSERT("", pState && pState->pFile && data && bytesToRead > 0);
-	int32_t bytesRead = fread(data, 1, bytesToRead, pState->pFile);
-	STUC_RETURN_ERR_IFNOT_COND(
+	PixErr err = PIX_ERR_SUCCESS;
+	PlatformContext *pState = pFile;
+	PIX_ERR_ASSERT("", pState && pState->pFile && pData && bytesToRead > 0);
+	I32 bytesRead = fread(pData, 1, bytesToRead, pState->pFile);
+	PIX_ERR_RETURN_IFNOT_COND(
 		err,
 		bytesRead == bytesToRead,
 		"Number of bytes read does not match data len"
@@ -75,11 +87,15 @@ StucResult stucPlatformFileRead(
 	return err;
 }
 
-StucResult stucPlatformFileClose(void *file) {
-	StucResult err = STUC_SUCCESS;
-	PlatformContext *pState = file;
-	STUC_ASSERT("", pState && pState->pFile);
+PixErr pixioFileClose(void *pFile) {
+	PixErr err = PIX_ERR_SUCCESS;
+	PlatformContext *pState = pFile;
+	PIX_ERR_ASSERT("", pState && pState->pFile);
 	fclose(pState->pFile);
-	pState->pAlloc->fpFree(pState);
+	pState->alloc.fpFree(pState);
 	return err;
+}
+
+I32 pixioPathMaxGet() {
+	return PIXIO_PATH_MAX;
 }
