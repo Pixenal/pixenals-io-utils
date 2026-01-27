@@ -30,3 +30,44 @@ PixErr pixioFileWrite(void *pFile, const unsigned char *data, int32_t dataSize);
 PixErr pixioFileRead(void *pFile, unsigned char *data, int32_t bytesToRead);
 PixErr pixioFileClose(void *pFile);
 int32_t pixioPathMaxGet();
+
+#define PIXIO_SHM_NAME_MAX_LEN 57
+#define PIXIO_SHM_DATA_SIZE (1024 * 1024)
+
+typedef enum PixioShmFlag {
+	PIXIO_SHM_NONE,
+	PIXIO_SHM_WRITTEN,
+	PIXIO_SHM_READ,
+	PIXIO_SHM_BLOCK_START,
+	PIXIO_SHM_BLOCK_START_ACK,
+	PIXIO_SHM_BLOCK_END,
+	PIXIO_SHM_BLOCK_END_ACK,
+	PIXIO_SHM_CLOSE,
+	PIXIO_SHM_CLOSE_ACK,
+	PIXIO_SHM_ERROR
+} PixioShmFlag;
+
+typedef struct ShmHeader{
+	void *pMutex;
+	I32 size;
+	PixioShmFlag flag;
+} ShmHeader;
+
+union PixioShmAccess {
+	void *pBuf;
+	ShmHeader *pHeader;
+};
+
+typedef struct PixioShmCtx {
+	void *pFile;
+	union PixioShmAccess access;
+	I32 blockSize;
+} PixioShmCtx;
+
+PixErr pixioShmOpenServer(PixioShmCtx *pCtx, const char *pName, char *pNameOut);
+PixErr pixioShmOpenClient(PixioShmCtx *pCtx, const char *pName);
+PixErr pixioShmCloseServer(PixioShmCtx *pCtx);
+PixErr pixioShmCloseClient(PixioShmCtx *pCtx);
+PixErr pixioShmSend(PixioShmCtx *pCtx, int32_t size, I32 desc, const void *pData);
+PixErr pixioShmReceiveInit(PixioShmCtx *pCtx, int32_t *pSize, I32 *pDesc, bool *pClose);
+PixErr pixioShmReceive(PixioShmCtx *pCtx, void *pDest);
