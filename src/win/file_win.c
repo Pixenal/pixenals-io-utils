@@ -394,6 +394,7 @@ PixErr pixioShmSend(PixioShmCtx *pCtx, I32 size, I32 desc, const void *pData) {
 	err = pixioShmWrite(pCtx, sizeof(I32), &desc);
 	PIX_ERR_RETURN_IFNOT(err, "");
 	I32 written = 0;
+	I32 packetCount = 0;
 	do {
 		err = shmWait(pCtx, PIXIO_SHM_WRITTEN, &flag, 8, WAIT_TILL_NOT);
 		PIX_ERR_RETURN_IFNOT_COND(err, flag == PIXIO_SHM_READ,"");
@@ -403,8 +404,10 @@ PixErr pixioShmSend(PixioShmCtx *pCtx, I32 size, I32 desc, const void *pData) {
 			err = pixioShmWrite(pCtx, packetSize, (U8 *)pData + written);
 			PIX_ERR_RETURN_IFNOT(err, "");
 			written += packetSize;
+			++packetCount;
 		}
 	} while(written < size);
+	printf("sent %d bytes in %d packets\n", size, packetCount);
 	err = shmWait(pCtx, PIXIO_SHM_WRITTEN, &flag, 8, WAIT_TILL_NOT);
 	PIX_ERR_RETURN_IFNOT_COND(err, flag == PIXIO_SHM_READ, "");
 	shmHandshakeServer(pCtx, PIXIO_SHM_BLOCK_END);
