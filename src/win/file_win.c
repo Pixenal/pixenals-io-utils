@@ -322,7 +322,7 @@ PixErr shmWait(
 		U64 elapsed = timeNow - timeStart;
 		elapsed = elapsed < 0 ? (U64)UINT_MAX + timeNow - timeStart : elapsed;
 		PIX_ERR_RETURN_IFNOT_COND(err, elapsed <= timeout64, "timed out");
-		Sleep(1);
+		//Sleep(1);
 	} while(true);
 	return err;
 }
