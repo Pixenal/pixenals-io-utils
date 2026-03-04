@@ -407,7 +407,7 @@ PixErr pixioShmSend(PixioShmCtx *pCtx, I32 size, I32 desc, const void *pData) {
 			++packetCount;
 		}
 	} while(written < size);
-	printf("sent %d bytes in %d packets\n", size, packetCount);
+	//printf("sent %d bytes in %d packets\n", size, packetCount);
 	err = shmWait(pCtx, PIXIO_SHM_WRITTEN, &flag, 8, WAIT_TILL_NOT);
 	PIX_ERR_RETURN_IFNOT_COND(err, flag == PIXIO_SHM_READ, "");
 	shmHandshakeServer(pCtx, PIXIO_SHM_BLOCK_END);
