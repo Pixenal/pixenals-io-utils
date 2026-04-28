@@ -71,3 +71,26 @@ PixErr pixioShmCloseClient(PixioShmCtx *pCtx);
 PixErr pixioShmSend(PixioShmCtx *pCtx, int32_t size, I32 desc, const void *pData);
 PixErr pixioShmReceiveInit(PixioShmCtx *pCtx, int32_t *pSize, I32 *pDesc, bool *pClose);
 PixErr pixioShmReceive(PixioShmCtx *pCtx, void *pDest);
+
+#define PIXIO_BYTE_ARR_IO_BUF_LEN 34
+
+typedef struct PixioByteArr {
+	uint8_t *pString;
+	int64_t size;
+	int64_t nextBitIdx;
+	int64_t byteIdx;
+} PixioByteArr;
+
+void pixioByteArrWrite(
+	const PixalcFPtrs *pAlloc,
+	PixioByteArr *pByteArr,
+	const void *pData,
+	int32_t bitLen
+);
+void pixioByteArrWriteStr(
+	const PixalcFPtrs *pAlloc,
+	PixioByteArr *pByteArr,
+	const char *pStr
+);
+void pixioByteArrRead(PixioByteArr *pByteArr, void *pData, int32_t bitLen);
+void pixioByteArrReadStr(PixioByteArr *pByteArr, char *pStr, int32_t maxLen);

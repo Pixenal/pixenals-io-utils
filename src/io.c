@@ -3,966 +3,146 @@ SPDX-FileCopyrightText: 2025 Caleb Dawson
 SPDX-License-Identifier: Apache-2.0
 */
 
-//TODO these should be prefixed with STUC_
-#define VERT_ATTRIBUTE_AMOUNT 3
-#define LOOP_ATTRIBUTE_AMOUNT 3
-#define ENCODE_DECODE_BUFFER_LENGTH 34
-#define STUC_MAP_VERSION 100
-#define STUC_FLAT_CUTOFF_HEADER_SIZE 56
-
 #include <stdlib.h>
 #include <stdio.h>
 #include <limits.h>
 #include <string.h>
 
-#include <zlib.h>
+#include <pixenals_io_utils.h>
 
-#include <io.h>
-#include <quadtree.h>
-#include <map.h>
-#include <context.h>
-#include <platform_io.h>
-#include <math_utils.h>
-#include <attrib_utils.h>
-#include <error.h>
+typedef int64_t I64;
+typedef int32_t I32;
+typedef uint8_t U8;
 
 static
-void reallocByteStringIfNeeded(
-	const StucAlloc *pAlloc,
-	ByteString *pByteString,
+void reallocByteArrIfNeeded(
+	const PixalcFPtrs *pAlloc,
+	PixioByteArr *pByteArr,
 	I64 bitOffset
 ) {
-	I64 bitCount = ((pByteString->byteIdx) * 8) + pByteString->nextBitIdx;
-	PIX_ERR_ASSERT("", bitCount <= pByteString->size * 8);
+	I64 bitCount = ((pByteArr->byteIdx) * 8) + pByteArr->nextBitIdx;
+	PIX_ERR_ASSERT("", bitCount <= pByteArr->size * 8);
 	bitCount += bitOffset;
 	I64 byteCount = bitCount / 8 + (bitCount % 8 != 0);
-	if (byteCount >= pByteString->size) {
-		I64 oldSize = pByteString->size;
-		pByteString->size *= 2;
-		pByteString->pString = pAlloc->fpRealloc(pByteString->pString, pByteString->size);
-		memset(pByteString->pString + oldSize, 0, pByteString->size - oldSize);
+	if (byteCount >= pByteArr->size) {
+		I64 oldSize = pByteArr->size;
+		pByteArr->size *= 2;
+		pByteArr->pString = pAlloc->fpRealloc(pByteArr->pString, pByteArr->size);
+		memset(pByteArr->pString + oldSize, 0, pByteArr->size - oldSize);
 	}
 }
 
-void stucEncodeValue(
-	const StucAlloc *pAlloc,
-	ByteString *pByteString,
-	U8 *pValue,
-	I32 lengthInBits
+void pixioByteArrWrite(
+	const PixalcFPtrs *pAlloc,
+	PixioByteArr *pByteArr,
+	const void *pData,
+	int32_t bitLen
 ) {
-	reallocByteStringIfNeeded(pAlloc, pByteString, lengthInBits);
-	U8 valueBuf[ENCODE_DECODE_BUFFER_LENGTH] = {0};
-	I32 lengthInBytes = lengthInBits / 8;
-	lengthInBytes += (lengthInBits - lengthInBytes * 8) > 0;
+	reallocByteStringIfNeeded(pAlloc, pByteArr, bitLen);
+	U8 valueBuf[PIXIO_BYTE_ARR_IO_BUF_LEN] = {0};
+	I32 lengthInBytes = bitLen / 8;
+	lengthInBytes += (bitLen - lengthInBytes * 8) > 0;
 	for (I32 i = 1; i <= lengthInBytes; ++i) {
-		valueBuf[i] = pValue[i - 1];
+		valueBuf[i] = ((U8 *)pData)[i - 1];
 	}
 	for (I32 i = lengthInBytes - 1; i >= 1; --i) {
-		valueBuf[i] <<= pByteString->nextBitIdx;
+		valueBuf[i] <<= pByteArr->nextBitIdx;
 		U8 nextByteCopy = valueBuf[i - 1];
-		nextByteCopy >>= 8 - pByteString->nextBitIdx;
+		nextByteCopy >>= 8 - pByteArr->nextBitIdx;
 		valueBuf[i] |= nextByteCopy;
 	}
-	I32 writeUpTo = lengthInBytes + (pByteString->nextBitIdx > 0);
+	I32 writeUpTo = lengthInBytes + (pByteArr->nextBitIdx > 0);
 	for (I32 i = 0; i < writeUpTo; ++i) {
-		pByteString->pString[pByteString->byteIdx + i] |= valueBuf[i + 1];
+		pByteArr->pString[pByteArr->byteIdx + i] |= valueBuf[i + 1];
 	}
-	pByteString->nextBitIdx = pByteString->nextBitIdx + lengthInBits;
-	pByteString->byteIdx += pByteString->nextBitIdx / 8;
-	pByteString->nextBitIdx %= 8;
+	pByteArr->nextBitIdx = pByteArr->nextBitIdx + bitLen;
+	pByteArr->byteIdx += pByteArr->nextBitIdx / 8;
+	pByteArr->nextBitIdx %= 8;
 }
 
-void stucEncodeString(const StucAlloc *pAlloc, ByteString *pByteString, U8 *pString) {
-	I32 lengthInBits = ((I32)strlen((char *)pString) + 1) * 8;
-	I32 lengthInBytes = lengthInBits / 8;
+void pixioByteArrWriteStr(
+	const PixalcFPtrs *pAlloc,
+	PixioByteArr *pByteArr,
+	const char *pStr
+) {
+	I32 bitLen = ((I32)strlen((char *)pStr) + 1) * 8;
+	I32 lengthInBytes = bitLen / 8;
 	//+8 for potential padding
-	reallocByteStringIfNeeded(pAlloc, pByteString, lengthInBits + 8);
-	if (pByteString->nextBitIdx != 0) {
+	reallocByteArrIfNeeded(pAlloc, pByteArr, bitLen + 8);
+	if (pByteArr->nextBitIdx != 0) {
 		//pad to beginning of next byte
-		pByteString->nextBitIdx = 0;
-		pByteString->byteIdx++;
+		pByteArr->nextBitIdx = 0;
+		pByteArr->byteIdx++;
 	}
 	for (I32 i = 0; i < lengthInBytes; ++i) {
-		pByteString->pString[pByteString->byteIdx] = pString[i];
-		pByteString->byteIdx++;
+		pByteArr->pString[pByteArr->byteIdx] = pStr[i];
+		pByteArr->byteIdx++;
 	}
 }
 
-void stucDecodeValue(ByteString *pByteString, U8 *pValue, I32 lengthInBits) {
-	I32 lengthInBytes = lengthInBits / 8;
-	I32 bitDifference = lengthInBits - lengthInBytes * 8;
+void pixioByteArrRead(PixioByteArr *pByteArr, void *pData, int32_t bitLen) {
+	I32 lengthInBytes = bitLen / 8;
+	I32 bitDifference = bitLen - lengthInBytes * 8;
 	lengthInBytes += bitDifference > 0;
-	U8 buf[ENCODE_DECODE_BUFFER_LENGTH] = {0};
+	U8 buf[PIXIO_BYTE_ARR_IO_BUF_LEN] = {0};
 	for (I32 i = 0; i < lengthInBytes; ++i) {
-		buf[i] = pByteString->pString[pByteString->byteIdx + i];
+		buf[i] = pByteArr->pString[pByteArr->byteIdx + i];
 	}
 	for (I32 i = 0; i < lengthInBytes; ++i) {
-		buf[i] >>= pByteString->nextBitIdx;
+		buf[i] >>= pByteArr->nextBitIdx;
 		U8 nextByteCopy = buf[i + 1];
-		nextByteCopy <<= 8 - pByteString->nextBitIdx;
+		nextByteCopy <<= 8 - pByteArr->nextBitIdx;
 		buf[i] |= nextByteCopy;
 	}
 	for (I32 i = 0; i < lengthInBytes; ++i) {
-		pValue[i] = buf[i];
+		((U8 *)pData)[i] = buf[i];
 	}
 	U8 mask = UCHAR_MAX >> ((8 - bitDifference) % 8);
-	pValue[lengthInBytes - 1] &= mask;
-	pByteString->nextBitIdx = pByteString->nextBitIdx + lengthInBits;
-	pByteString->byteIdx += pByteString->nextBitIdx / 8;
-	pByteString->nextBitIdx %= 8;
+	((U8 *)pData)[lengthInBytes - 1] &= mask;
+	pByteArr->nextBitIdx = pByteArr->nextBitIdx + bitLen;
+	pByteArr->byteIdx += pByteArr->nextBitIdx / 8;
+	pByteArr->nextBitIdx %= 8;
 }
 
-void stucDecodeString(ByteString *pByteString, char *pString, I32 maxLen) {
-	pByteString->byteIdx += pByteString->nextBitIdx > 0;
-	U8 *dataPtr = pByteString->pString + pByteString->byteIdx;
+void pixioByteArrReadStr(PixioByteArr *pByteArr, char *pStr, int32_t maxLen) {
+	pByteArr->byteIdx += pByteArr->nextBitIdx > 0;
+	U8 *dataPtr = pByteArr->pString + pByteArr->byteIdx;
 	I32 i = 0;
 	for (; i < maxLen && dataPtr[i]; ++i) {
-		pString[i] = dataPtr[i];
+		pStr[i] = dataPtr[i];
 	}
-	pString[i] = 0;
-	pByteString->byteIdx += i + 1;
-	pByteString->nextBitIdx = 0;
+	pStr[i] = 0;
+	pByteArr->byteIdx += i + 1;
+	pByteArr->nextBitIdx = 0;
 }
 
 static
-void encodeAttribs(
-	const StucAlloc *pAlloc,
-	ByteString *pData,
-	AttribArray *pAttribs,
-	I32 dataLen
-) {
-	for (I32 i = 0; i < pAttribs->count; ++i) {
-		if (pAttribs->pArr[i].core.type == STUC_ATTRIB_STRING) {
-			for (I32 j = 0; j < dataLen; ++j) {
-				void *pString = stucAttribAsVoid(&pAttribs->pArr[i].core, j);
-				stucEncodeString(pAlloc, pData, pString);
-			}
-		}
-		else {
-			I32 attribSize = stucGetAttribSizeIntern(pAttribs->pArr[i].core.type) * 8;
-			for (I32 j = 0; j < dataLen; ++j) {
-				stucEncodeValue(pAlloc, pData, stucAttribAsVoid(&pAttribs->pArr[i].core, j), attribSize);
-			}
-		}
-	}
-}
-
-//TODO now that StucAttrib and StucAttribIndexed share the same StucAttribCore
-//struct, try and generalize these funcs for both if possible
-static
-void encodeIndexedAttribs(
-	const StucAlloc *pAlloc,
-	ByteString *pData,
-	AttribIndexedArr *pAttribs
-) {
-	for (I32 i = 0; i < pAttribs->count; ++i) {
-		AttribIndexed *pAttrib = pAttribs->pArr + i;
-		if (pAttrib->core.type == STUC_ATTRIB_STRING) {
-			for (I32 j = 0; j < pAttrib->count; ++j) {
-				void *pString = stucAttribAsVoid(&pAttrib->core, j);
-				stucEncodeString(pAlloc, pData, pString);
-			}
-		}
-		else {
-			I32 attribSize = stucGetAttribSizeIntern(pAttrib->core.type) * 8;
-			for (I32 j = 0; j < pAttrib->count; ++j) {
-				stucEncodeValue(pAlloc, pData, stucAttribAsVoid(&pAttrib->core, j), attribSize);
-			}
-		}
-	}
-}
-
-static
-void encodeAttribMeta(
-	const StucAlloc *pAlloc,
-	ByteString *pData,
-	AttribArray *pAttribs
-) {
-	for (I32 i = 0; i < pAttribs->count; ++i) {
-		stucEncodeValue(pAlloc, pData, (U8 *)&pAttribs->pArr[i].core.type, 8);
-		stucEncodeValue(pAlloc, pData, (U8 *)&pAttribs->pArr[i].core.use, 8);
-		stucEncodeValue(pAlloc, pData, (U8 *)&pAttribs->pArr[i].interpolate, 1);
-		stucEncodeString(pAlloc, pData, (U8 *)pAttribs->pArr[i].core.name);
-	}
-}
-
-static
-void encodeIndexedAttribMeta(
-	const StucAlloc *pAlloc,
-	ByteString *pData,
-	AttribIndexedArr *pAttribs
-) {
-	for (I32 i = 0; i < pAttribs->count; ++i) {
-		stucEncodeValue(pAlloc, pData, (U8 *)&pAttribs->pArr[i].core.type, 8);
-		stucEncodeValue(pAlloc, pData, (U8 *)&pAttribs->pArr[i].core.use, 8);
-		stucEncodeValue(pAlloc, pData, (U8 *)&pAttribs->pArr[i].count, 32);
-		stucEncodeString(pAlloc, pData, (U8 *)pAttribs->pArr[i].core.name);
-	}
-}
-
-static
-void encodeDataName(const StucAlloc *pAlloc, ByteString *pByteString, char *pName) {
+void encodeDataName(const PixalcFPtrs *pAlloc, PixioByteArr *pByteArr, char *pName) {
 	//not using stucEncodeString, as there's not need for a null terminator.
 	//Only using 2 characters
 	
 	//ensure string is aligned with byte (we need to do this manually,
 	//as stucEncodeValue is being used instead of stucEncodeString)
-	if (pByteString->nextBitIdx != 0) {
-		pByteString->nextBitIdx = 0;
-		pByteString->byteIdx++;
+	if (pByteArr->nextBitIdx != 0) {
+		pByteArr->nextBitIdx = 0;
+		pByteArr->byteIdx++;
 	}
-	stucEncodeValue(pAlloc, pByteString, (U8 *)pName, 16);
+	stucEncodeValue(pAlloc, pByteArr, (U8 *)pName, 16);
 }
 
 static
-StucErr encodeObj(
-	const StucAlloc *pAlloc,
-	ByteString *pByteString,
-	StucObject *pObj
-) {
-	//encode obj header
-	StucMesh *pMesh = (StucMesh *)pObj->pData;
-	encodeDataName(pAlloc, pByteString, "OS"); //object start
-	encodeDataName(pAlloc, pByteString, "XF"); //transform/ xform
-	for (I32 i = 0; i < 16; ++i) {
-		I32 x = i % 4;
-		I32 y = i / 4;
-		stucEncodeValue(pAlloc, pByteString, (U8 *)&pObj->transform.d[y][x], 32);
-	}
-	encodeDataName(pAlloc, pByteString, "OT"); //object type
-	stucEncodeValue(pAlloc, pByteString, (U8 *)&pObj->pData->type, 8);
-	if (!stucCheckIfMesh(*pObj->pData)) {
-		return PIX_ERR_SUCCESS;
-	}
-	encodeDataName(pAlloc, pByteString, "HD"); //header
-	stucEncodeValue(pAlloc, pByteString, (U8 *)&pMesh->meshAttribs.count, 32);
-	encodeAttribMeta(pAlloc, pByteString, &pMesh->meshAttribs);
-	stucEncodeValue(pAlloc, pByteString, (U8 *)&pMesh->faceAttribs.count, 32);
-	encodeAttribMeta(pAlloc, pByteString, &pMesh->faceAttribs);
-	stucEncodeValue(pAlloc, pByteString, (U8 *)&pMesh->cornerAttribs.count, 32);
-	encodeAttribMeta(pAlloc, pByteString, &pMesh->cornerAttribs);
-	stucEncodeValue(pAlloc, pByteString, (U8 *)&pMesh->edgeAttribs.count, 32);
-	encodeAttribMeta(pAlloc, pByteString, &pMesh->edgeAttribs);
-	stucEncodeValue(pAlloc, pByteString, (U8 *)&pMesh->vertAttribs.count, 32);
-	encodeAttribMeta(pAlloc, pByteString, &pMesh->vertAttribs);
-	stucEncodeValue(pAlloc, pByteString, (U8 *)&pMesh->faceCount, 32);
-	stucEncodeValue(pAlloc, pByteString, (U8 *)&pMesh->cornerCount, 32);
-	stucEncodeValue(pAlloc, pByteString, (U8 *)&pMesh->edgeCount, 32);
-	stucEncodeValue(pAlloc, pByteString, (U8 *)&pMesh->vertCount, 32);
-	//encode data
-	encodeDataName(pAlloc, pByteString, "MA"); //mesh attribs
-	encodeAttribs(pAlloc, pByteString, &pMesh->meshAttribs, 1);
-	encodeDataName(pAlloc, pByteString, "FL"); //face list
-	for (I32 i = 0; i < pMesh->faceCount; ++i) {
-		PIX_ERR_ASSERT("",
-			pMesh->pFaces[i] >= 0 &&
-			pMesh->pFaces[i] < pMesh->cornerCount
-		);
-		stucEncodeValue(pAlloc, pByteString, (U8 *)&pMesh->pFaces[i], 32);
-	}
-	encodeDataName(pAlloc, pByteString, "FA"); //face attribs
-	encodeAttribs(pAlloc, pByteString, &pMesh->faceAttribs, pMesh->faceCount);
-	encodeDataName(pAlloc, pByteString, "LL"); //corner and edge lists
-	for (I32 i = 0; i < pMesh->cornerCount; ++i) {
-		PIX_ERR_ASSERT("",
-			pMesh->pCorners[i] >= 0 &&
-			pMesh->pCorners[i] < pMesh->vertCount
-		);
-		stucEncodeValue(pAlloc, pByteString, (U8 *)&pMesh->pCorners[i], 32);
-		PIX_ERR_ASSERT("",
-			pMesh->pEdges[i] >= 0 &&
-			pMesh->pEdges[i] < pMesh->edgeCount
-		);
-		stucEncodeValue(pAlloc, pByteString, (U8 *)&pMesh->pEdges[i], 32);
-	}
-	encodeDataName(pAlloc, pByteString, "LA"); //corner attribs
-	encodeAttribs(pAlloc, pByteString, &pMesh->cornerAttribs, pMesh->cornerCount);
-	encodeDataName(pAlloc, pByteString, "EA"); //edge attribs
-	encodeAttribs(pAlloc, pByteString, &pMesh->edgeAttribs, pMesh->edgeCount);
-	encodeDataName(pAlloc, pByteString, "VA"); //vert attribs
-	encodeAttribs(pAlloc, pByteString, &pMesh->vertAttribs, pMesh->vertCount);
-	encodeDataName(pAlloc, pByteString, "OE"); //object end
-	return PIX_ERR_SUCCESS;
-}
-
-/*
-static
-void addSpacing(ByteString *pByteString, I32 lenInBits, I64 *pSize) {
-	I32 lenInBytes = lenInBits / 8;
-	pByteString->byteIdx += lenInBytes;
-	pByteString->nextBitIdx = lenInBits - lenInBytes * 8;
-	*pSize -= lenInBits;
-}
-*/
-
-static
-I32 addUniqToPtrArr(void *pPtr, I32 *pCount, void **ppArr) {
-	for (I32 i = 0; i < *pCount; ++i) {
-		if (pPtr == ppArr[i]) {
-			return i;
-		}
-	}
-	ppArr[*pCount] = pPtr;
-	++*pCount;
-	return *pCount - 1;
-}
-
-static
-void getUniqueFlatCutoffs(
-	StucContext pCtx,
-	I32 usgCount,
-	StucUsg *pUsgArr,
-	I32 *pCutoffCount,
-	StucObject ***pppCutoffs,
-	I32 **ppIndices
-) {
-	*ppIndices = pCtx->alloc.fpCalloc(usgCount, sizeof(I32));
-	*pppCutoffs = pCtx->alloc.fpCalloc(usgCount, sizeof(void *));
-	*pCutoffCount = 0;
-	for (I32 i = 0; i < usgCount; ++i) {
-		if (!pUsgArr[i].pFlatCutoff) {
-			continue;
-		}
-		(*ppIndices)[i] =
-			addUniqToPtrArr(pUsgArr[i].pFlatCutoff, pCutoffCount, (void **)*pppCutoffs);
-	}
-	*pppCutoffs = pCtx->alloc.fpRealloc(*pppCutoffs, sizeof(void *) * *pCutoffCount);
-}
-
-static
-I64 estimateObjSize(StucObject *pObj) {
-	I64 total = 0;
-	StucMesh *pMesh = (StucMesh *)pObj->pData;
-	total += 4 * 16; //transform
-	total += 1; //type
-	total += 2 * 3; //data names/ checks
-	if (!stucCheckIfMesh(*pObj->pData)) {
-		return total;
-	}
-	
-	total += 2 * 9; //data names/ checks
-
-	total += (I64)pMesh->faceAttribs.count * (I64)pMesh->faceCount;
-	total += (I64)pMesh->cornerAttribs.count * (I64)pMesh->cornerCount;
-	total += (I64)pMesh->edgeAttribs.count * (I64)pMesh->edgeCount;
-	total += (I64)pMesh->vertAttribs.count * (I64)pMesh->vertCount;
-
-	total += 4 * (I64)pMesh->faceCount;
-	total += 4 * (I64)pMesh->cornerCount;
-	total += 4 * (I64)pMesh->cornerCount; //edge list
-
-	return total;
-}
-
-static
-I64 estimateUsgArrSize(I32 count, StucUsg *pUsgArr) {
-	I64 total = 0;
-	for (I32 i = 0; i < count; ++i) {
-		total += estimateObjSize(&pUsgArr[i].obj);
-		total += estimateObjSize(pUsgArr[i].pFlatCutoff);
-	}
-	return total;
-}
-
-static
-I64 estimateObjArrSize(I32 count, StucObject *pObjArr) {
-	I64 total = 0;
-	for (I32 i = 0; i < count; ++i) {
-		total += estimateObjSize(pObjArr + i);
-	}
-	return total;
-}
-
-StucErr stucWriteStucFile(
-	StucContext pCtx,
-	const char *pPath,
-	I32 objCount,
-	StucObject *pObjArr,
-	I32 usgCount,
-	StucUsg *pUsgArr,
-	StucAttribIndexedArr *pIndexedAttribs
-) {
-	StucErr err = PIX_ERR_SUCCESS;
-	PIX_ERR_RETURN_IFNOT_COND(err, pPath[0], "path is empty");
-	const StucAlloc *pAlloc = &pCtx->alloc;
-	ByteString header = {0};
-	ByteString data = {0};
-	void *pFile = NULL;
-
-	I32 *pCutoffIndices = NULL;
-	StucObject **ppCutoffs = NULL;
-	I32 cutoffCount = 0;
-	if (usgCount) {
-		getUniqueFlatCutoffs(
-			pCtx,
-			usgCount,
-			pUsgArr,
-			&cutoffCount,
-			&ppCutoffs,
-			&pCutoffIndices
-		);
-	}
-	data.size =
-		estimateObjArrSize(objCount, pObjArr) +
-		estimateUsgArrSize(usgCount, pUsgArr);
-	data.pString = pCtx->alloc.fpCalloc(data.size, 1);
-	if (pIndexedAttribs->count) {
-		encodeIndexedAttribMeta(pAlloc, &data, pIndexedAttribs);
-		encodeIndexedAttribs(pAlloc, &data, pIndexedAttribs);
-	}
-	for (I32 i = 0; i < objCount; ++i) {
-		err = encodeObj(pAlloc, &data, pObjArr + i);
-		PIX_ERR_THROW_IFNOT(err, "", 0);
-	}
-	for (I32 i = 0; i < cutoffCount; ++i) {
-		err = encodeObj(pAlloc, &data, ppCutoffs[i]);
-		PIX_ERR_THROW_IFNOT(err, "", 0);
-	}
-	for (I32 i = 0; i < usgCount; ++i) {
-		err = encodeObj(pAlloc, &data, &pUsgArr[i].obj);
-		PIX_ERR_THROW_IFNOT(err, "", 0);
-		bool hasFlatCutoff = pUsgArr[i].pFlatCutoff != NULL;
-		encodeDataName(pAlloc, &data, "FC"); //flatten cut-off
-		stucEncodeValue(pAlloc, &data, (U8 *)&hasFlatCutoff, 8);
-		if (hasFlatCutoff) {
-			stucEncodeValue(pAlloc, &data, (U8 *)&pCutoffIndices[i], 32);
-		}
-	}
-	//compress data
-	//TODO convert to use proper zlib inflate and deflate calls
-	//compress and decompress are not context independent iirc
-	I64 dataSize = data.byteIdx + (data.nextBitIdx > 0);
-	//zlib needs some padding
-	uLongf uCompressedDataSize = (uLong)((I32)((F32)dataSize * 1.01f) + 12);
-	U8 *compressedData = pCtx->alloc.fpMalloc(uCompressedDataSize);
-	I32 zResult = compress(
-		compressedData,
-		&uCompressedDataSize,
-		data.pString,
-		(uLong)dataSize
-	);
-	switch(zResult) {
-		case Z_OK:
-			printf("Successfully compressed STUC data\n");
-			break;
-		case Z_MEM_ERROR:
-			PIX_ERR_THROW(err, "Failed to compress STUC data, memory error\n", 0);
-		case Z_BUF_ERROR:
-			PIX_ERR_THROW(err, "Failed to compress STUC data, output buffer too small\n", 0);
-	}
-	I64 compressedDataSize = (I64)uCompressedDataSize;
-	printf("Compressed data is %lld long\n", compressedDataSize);
-
-	//encode header
-	const char *format = "UV Stucco Map File";
-	I32 formatLen = (I32)strnlen(format, MAP_FORMAT_NAME_MAX_LEN);
-	PIX_ERR_ASSERT("", formatLen < MAP_FORMAT_NAME_MAX_LEN)
-	header.size =
-		8 * ((I64)formatLen + 1) +
-		16 + //version
-		64 + //compressed data size
-		64 + //uncompressed data size
-		32 + //indexed attrib count
-		32 + //obj count
-		32 + //usg count
-		32;  //flatten cutoff count
-	header.size = header.size / 8 + (header.size % 8 != 0);
-	header.pString = pCtx->alloc.fpCalloc(header.size, 1);
-	stucEncodeString(pAlloc, &header, (U8 *)format);
-	I32 version = STUC_MAP_VERSION;
-	stucEncodeValue(pAlloc, &header, (U8 *)&version, 16);
-	stucEncodeValue(pAlloc, &header, (U8 *)&compressedDataSize, 64);
-	stucEncodeValue(pAlloc, &header, (U8 *)&dataSize, 64);
-	stucEncodeValue(pAlloc, &header, (U8 *)&pIndexedAttribs->count, 32);
-	stucEncodeValue(pAlloc, &header, (U8 *)&objCount, 32);
-	stucEncodeValue(pAlloc, &header, (U8 *)&usgCount, 32);
-	stucEncodeValue(pAlloc, &header, (U8 *)&cutoffCount, 32);
-
-	//TODO CRC for uncompressed data
-	
-	err = pCtx->io.fpOpen(&pFile, pPath, 0, &pCtx->alloc);
-	PIX_ERR_THROW_IFNOT(err, "", 0);
-	I64 finalHeaderLen = header.byteIdx + (header.nextBitIdx > 0);
-	err = pCtx->io.fpWrite(pFile, (U8 *)&finalHeaderLen, 2);
-	PIX_ERR_THROW_IFNOT(err, "", 0);
-	err = pCtx->io.fpWrite(pFile, header.pString, (I32)finalHeaderLen);
-	PIX_ERR_THROW_IFNOT(err, "", 0);
-	err = pCtx->io.fpWrite(pFile, compressedData, (I32)compressedDataSize);
-	PIX_ERR_THROW_IFNOT(err, "", 0);
-
-	PIX_ERR_CATCH(0, err, ;);
-	if (pFile) {
-		err = pCtx->io.fpClose(pFile);
-	}
-	if (header.pString) {
-		pCtx->alloc.fpFree(header.pString);
-	}
-	if (data.pString) {
-		pCtx->alloc.fpFree(data.pString);
-	}
-	printf("Finished STUC export\n");
-	return err;
-}
-
-static
-StucErr decodeAttribMeta(ByteString *pData, AttribArray *pAttribs) {
-	for (I32 i = 0; i < pAttribs->count; ++i) {
-		stucDecodeValue(pData, (U8 *)&pAttribs->pArr[i].core.type, 8);
-		stucDecodeValue(pData, (U8 *)&pAttribs->pArr[i].core.use, 8);
-		stucDecodeValue(pData, (U8 *)&pAttribs->pArr[i].interpolate, 1);
-		I32 maxNameLen = sizeof(pAttribs->pArr[i].core.name);
-		stucDecodeString(pData, (char *)pAttribs->pArr[i].core.name, maxNameLen);
-		for (I32 j = 0; j < i; ++j) {
-			if (!strncmp(pAttribs->pArr[i].core.name, pAttribs->pArr[j].core.name,
-			    STUC_ATTRIB_NAME_MAX_LEN)) {
-
-				//dup
-				return PIX_ERR_ERROR;
-			}
-		}
-	}
-	return PIX_ERR_SUCCESS;
-}
-
-static
-StucErr decodeIndexedAttribMeta(ByteString *pData, AttribIndexedArr *pAttribs) {
-	for (I32 i = 0; i < pAttribs->count; ++i) {
-		stucDecodeValue(pData, (U8 *)&pAttribs->pArr[i].core.type, 16);
-		stucDecodeValue(pData, (U8 *)&pAttribs->pArr[i].count, 32);
-		I32 maxNameLen = sizeof(pAttribs->pArr[i].core.name);
-		stucDecodeString(pData, (char *)pAttribs->pArr[i].core.name, maxNameLen);
-		for (I32 j = 0; j < i; ++j) {
-			if (!strncmp(pAttribs->pArr[i].core.name, pAttribs->pArr[j].core.name,
-				STUC_ATTRIB_NAME_MAX_LEN)) {
-
-				//dup
-				return PIX_ERR_ERROR;
-			}
-		}
-	}
-	return PIX_ERR_SUCCESS;
-}
-
-static
-void decodeAttribs(
-	StucContext pCtx,
-	ByteString *pData,
-	AttribArray *pAttribs,
-	I32 dataLen
-) {
-	stucStageBeginWrap(pCtx, "", pAttribs->count * dataLen);
-	for (I32 i = 0; i < pAttribs->count; ++i) {
-		Attrib* pAttrib = pAttribs->pArr + i;
-		stucSetStageName(pCtx, "Decoding attrib");
-		I32 attribSize = stucGetAttribSizeIntern(pAttrib->core.type);
-		pAttrib->core.pData = dataLen ?
-			pCtx->alloc.fpCalloc(dataLen, attribSize) : NULL;
-		attribSize *= 8;
-		I32 progressBase = i * pAttribs->count * dataLen;
-		for (I32 j = 0; j < dataLen; ++j) {
-			void *pAttribData = stucAttribAsVoid(&pAttrib->core, j);
-			if (pAttribs->pArr[i].core.type == STUC_ATTRIB_STRING) {
-				stucDecodeString(pData, pAttribData, attribSize);
-			}
-			else {
-				stucDecodeValue(pData, pAttribData, attribSize);
-			}
-			stucStageProgressWrap(pCtx, j + progressBase);
-		}
-	}
-	stucStageEndWrap(pCtx);
-}
-
-static
-void decodeIndexedAttribs(
-	StucContext pCtx,
-	ByteString *pData,
-	AttribIndexedArr *pAttribs
-) {
-	for (I32 i = 0; i < pAttribs->count; ++i) {
-		AttribIndexed* pAttrib = pAttribs->pArr + i;
-		I32 attribSize = stucGetAttribSizeIntern(pAttrib->core.type);
-		pAttrib->core.pData = pAttrib->count ?
-			pCtx->alloc.fpCalloc(pAttrib->count, attribSize) : NULL;
-		attribSize *= 8;
-		for (I32 j = 0; j < pAttrib->count; ++j) {
-			void *pAttribData = stucAttribAsVoid(&pAttrib->core, j);
-			if (pAttribs->pArr[i].core.type == STUC_ATTRIB_STRING) {
-				stucDecodeString(pData, pAttribData, attribSize);
-			}
-			else {
-				stucDecodeValue(pData, pAttribData, attribSize);
-			}
-		}
-	}
-}
-
-static
-StucHeader decodeStucHeader(
-	ByteString *headerByteString,
-	AttribIndexedArr *pIndexedAttribs
-) {
-	StucHeader header = {0};
-	stucDecodeString(headerByteString, header.format, MAP_FORMAT_NAME_MAX_LEN);
-	stucDecodeValue(headerByteString, (U8 *)&header.version, 16);
-	stucDecodeValue(headerByteString, (U8 *)&header.dataSizeCompressed, 64);;
-	stucDecodeValue(headerByteString, (U8 *)&header.dataSize, 64);
-	stucDecodeValue(headerByteString, (U8 *)&pIndexedAttribs->count, 32);
-	stucDecodeValue(headerByteString, (U8 *)&header.objCount, 32);
-	stucDecodeValue(headerByteString, (U8 *)&header.usgCount, 32);
-	stucDecodeValue(headerByteString, (U8 *)&header.flatCutoffCount, 32);
-
-	return header;
-}
-
-static
-StucErr isDataNameInvalid(ByteString *pByteString, char *pName) {
+PixErr isDataNameInvalid(PixioByteArr *pByteArr, char *pName) {
 	//ensure string is aligned with byte (we need to do this manually,
 	//as stucDecodeValue is being used instead of stucDecodeString, given there's
 	//only 2 characters)
-	pByteString->byteIdx += pByteString->nextBitIdx > 0;
-	pByteString->nextBitIdx = 0;
+	pByteArr->byteIdx += pByteArr->nextBitIdx > 0;
+	pByteArr->nextBitIdx = 0;
 	char dataName[2] = {0};
-	stucDecodeValue(pByteString, (U8 *)&dataName, 16);
+	stucDecodeValue(pByteArr, (U8 *)&dataName, 16);
 	if (dataName[0] != pName[0] || dataName[1] != pName[1]) {
 		return PIX_ERR_ERROR;
 	}
 	else {
 		return PIX_ERR_SUCCESS;
 	}
-}
-
-static
-StucErr loadObj(
-	StucContext pCtx,
-	StucObject *pObj,
-	ByteString *pByteString,
-	bool usesUsg
-) {
-	stucCreateMesh(pCtx, pObj, STUC_OBJECT_DATA_MESH_INTERN);
-	StucMesh *pMesh = (StucMesh *)pObj->pData;
-
-	StucErr err = PIX_ERR_NOT_SET;
-
-	err = isDataNameInvalid(pByteString, "OS"); //transform/ xform and type
-	PIX_ERR_THROW_IFNOT(err, "Data name did not match 'OS'", 0);
-	err = isDataNameInvalid(pByteString, "XF"); //transform/ xform and type
-	PIX_ERR_THROW_IFNOT(err, "Data name did not match 'XF'", 0);
-	for (I32 i = 0; i < 16; ++i) {
-		I32 x = i % 4;
-		I32 y = i / 4;
-		stucDecodeValue(pByteString, (U8 *)&pObj->transform.d[y][x], 32);
-	}
-	err = isDataNameInvalid(pByteString, "OT"); //object type
-	PIX_ERR_THROW_IFNOT(err, "Data name did not match 'OT'", 0);
-	stucDecodeValue(pByteString, (U8 *)&pObj->pData->type, 8);
-	if (!stucCheckIfMesh(*pObj->pData)) {
-		err = PIX_ERR_ERROR;
-		PIX_ERR_THROW_IFNOT(err, "Object is not a mesh", 0);
-	}
-	err = isDataNameInvalid(pByteString, "HD"); //header
-	PIX_ERR_THROW_IFNOT(err, "Data name did not match 'HD'", 0);
-	stucDecodeValue(pByteString, (U8 *)&pMesh->meshAttribs.count, 32);
-	pMesh->meshAttribs.pArr = pMesh->meshAttribs.count ?
-		pCtx->alloc.fpCalloc(pMesh->meshAttribs.count, sizeof(StucAttrib)) : NULL;
-	err = decodeAttribMeta(pByteString, &pMesh->meshAttribs);
-	PIX_ERR_THROW_IFNOT(err, "Failed to decode mesh attrib meta", 0);
-
-	stucDecodeValue(pByteString, (U8 *)&pMesh->faceAttribs.count, 32);
-	pMesh->faceAttribs.pArr = pMesh->faceAttribs.count ?
-		pCtx->alloc.fpCalloc(pMesh->faceAttribs.count, sizeof(StucAttrib)) : NULL;
-	err = decodeAttribMeta(pByteString, &pMesh->faceAttribs);
-	PIX_ERR_THROW_IFNOT(err, "Failed to decode face attrib meta", 0);
-
-	stucDecodeValue(pByteString, (U8 *)&pMesh->cornerAttribs.count, 32);
-	pMesh->cornerAttribs.pArr = pMesh->cornerAttribs.count ?
-		pCtx->alloc.fpCalloc(pMesh->cornerAttribs.count, sizeof(StucAttrib)) : NULL;
-	err = decodeAttribMeta(pByteString, &pMesh->cornerAttribs);
-	PIX_ERR_THROW_IFNOT(err, "Failed to decode corner attrib meta", 0);
-
-	stucDecodeValue(pByteString, (U8 *)&pMesh->edgeAttribs.count, 32);
-	pMesh->edgeAttribs.pArr = pMesh->edgeAttribs.count ?
-		pCtx->alloc.fpCalloc(pMesh->edgeAttribs.count, sizeof(StucAttrib)) : NULL;
-	err = decodeAttribMeta(pByteString, &pMesh->edgeAttribs);
-	PIX_ERR_THROW_IFNOT(err, "Failed to decode edge meta", 0);
-
-	stucDecodeValue(pByteString, (U8 *)&pMesh->vertAttribs.count, 32);
-	pMesh->vertAttribs.pArr = pMesh->vertAttribs.count ?
-		pCtx->alloc.fpCalloc(pMesh->vertAttribs.count + usesUsg, sizeof(StucAttrib)) : NULL;
-	err = decodeAttribMeta(pByteString, &pMesh->vertAttribs);
-	PIX_ERR_THROW_IFNOT(err, "Failed to decode vert attrib meta", 0);
-
-	stucDecodeValue(pByteString, (U8 *)&pMesh->faceCount, 32);
-	stucDecodeValue(pByteString, (U8 *)&pMesh->cornerCount, 32);
-	stucDecodeValue(pByteString, (U8 *)&pMesh->edgeCount, 32);
-	stucDecodeValue(pByteString, (U8 *)&pMesh->vertCount, 32);
-
-	//set usg attrib metadata if used
-	if (usesUsg) {
-		Attrib *usgAttrib = pMesh->vertAttribs.pArr + pMesh->vertAttribs.count;
-		usgAttrib->core.pData = pCtx->alloc.fpCalloc(pMesh->vertCount, sizeof(I32));
-		strncpy(
-			usgAttrib->core.name,
-			pCtx->spAttribNames[STUC_ATTRIB_USE_USG],
-			STUC_ATTRIB_NAME_MAX_LEN
-		);
-		usgAttrib->origin = STUC_ATTRIB_ORIGIN_MAP;
-		usgAttrib->interpolate = true;
-		usgAttrib->core.type = STUC_ATTRIB_I32;
-	}
-	err = isDataNameInvalid(pByteString, "MA"); //mesh attribs
-	PIX_ERR_THROW_IFNOT(err, "Data name did not match 'MA'", 0);
-	decodeAttribs(pCtx, pByteString, &pMesh->meshAttribs, 1);
-	stucStageEndWrap(pCtx);
-	err = isDataNameInvalid(pByteString, "FL"); //face list
-	PIX_ERR_THROW_IFNOT(err, "Data name did not match 'FL'", 0);
-	pMesh->pFaces = pCtx->alloc.fpCalloc(pMesh->faceCount + 1, sizeof(I32));
-	stucStageBeginWrap(pCtx, "Decoding faces", pMesh->faceCount);
-	for (I32 i = 0; i < pMesh->faceCount; ++i) {
-		stucDecodeValue(pByteString, (U8 *)&pMesh->pFaces[i], 32);
-		PIX_ERR_ASSERT("",
-			pMesh->pFaces[i] >= 0 &&
-			pMesh->pFaces[i] < pMesh->cornerCount
-		);
-		stucStageProgressWrap(pCtx, i);
-	}
-	stucStageEndWrap(pCtx);
-	err = isDataNameInvalid(pByteString, "FA"); //face attribs
-	PIX_ERR_THROW_IFNOT(err, "Data name did not match 'FA'", 0);
-	pMesh->pFaces[pMesh->faceCount] = pMesh->cornerCount;
-	decodeAttribs(pCtx, pByteString, &pMesh->faceAttribs, pMesh->faceCount);
-
-	err = isDataNameInvalid(pByteString, "LL"); //corner and edge lists
-	PIX_ERR_THROW_IFNOT(err, "Data name did not match 'LL'", 0);
-	pMesh->pCorners = pCtx->alloc.fpCalloc(pMesh->cornerCount, sizeof(I32));
-	pMesh->pEdges = pCtx->alloc.fpCalloc(pMesh->cornerCount, sizeof(I32));
-	stucStageBeginWrap(pCtx, "Decoding corners", pMesh->cornerCount);
-	for (I32 i = 0; i < pMesh->cornerCount; ++i) {
-		stucDecodeValue(pByteString, (U8 *)&pMesh->pCorners[i], 32);
-		PIX_ERR_ASSERT("",
-			pMesh->pCorners[i] >= 0 &&
-			pMesh->pCorners[i] < pMesh->vertCount
-		);
-		stucDecodeValue(pByteString, (U8 *)&pMesh->pEdges[i], 32);
-		PIX_ERR_ASSERT("",
-			pMesh->pEdges[i] >= 0 &&
-			pMesh->pEdges[i] < pMesh->edgeCount
-		);
-		stucStageProgressWrap(pCtx, i);
-	}
-	stucStageEndWrap(pCtx);
-
-	err = isDataNameInvalid(pByteString, "LA"); //corner attribs
-	PIX_ERR_THROW_IFNOT(err, "Data name did not match 'LA'", 0);
-	decodeAttribs(pCtx, pByteString, &pMesh->cornerAttribs, pMesh->cornerCount);
-	err = isDataNameInvalid(pByteString, "EA"); //edge attribs
-	PIX_ERR_THROW_IFNOT(err, "Data name did not match 'EA'", 0);
-	decodeAttribs(pCtx, pByteString, &pMesh->edgeAttribs, pMesh->edgeCount);
-	err = isDataNameInvalid(pByteString, "VA"); //vert attribs
-	PIX_ERR_THROW_IFNOT(err, "Data name did not match 'VA'", 0);
-	decodeAttribs(pCtx, pByteString, &pMesh->vertAttribs, pMesh->vertCount);
-
-	err = isDataNameInvalid(pByteString, "OE"); //obj end
-	PIX_ERR_THROW_IFNOT(err, "Data name did not match 'OE'", 0);
-	if (usesUsg) {
-		pMesh->vertAttribs.count++;
-	}
-	//TODO add PIX_ERR_ERROR and PIX_ERR_CATCH to all functions that return StucErr
-	PIX_ERR_CATCH(0, err,
-		//if error:
-		stucMeshDestroy(pCtx, pMesh);
-		pCtx->alloc.fpFree(pMesh);
-	);
-	return err;
-}
-
-static
-StucErr decodeStucData(
-	StucContext pCtx,
-	StucHeader *pHeader,
-	ByteString *dataByteString,
-	StucObject **ppObjArr,
-	StucUsg **ppUsgArr,
-	StucObject **ppFlatCutoffArr,
-	bool forEdit,
-	AttribIndexedArr *pIndexedAttribs
-) {
-	StucErr err = PIX_ERR_NOT_SET;
-	if (pIndexedAttribs && pIndexedAttribs->count) {
-		PIX_ERR_ASSERT("", pIndexedAttribs->count > 0);
-		pIndexedAttribs->pArr =
-			pCtx->alloc.fpCalloc(pIndexedAttribs->count, sizeof(AttribIndexed));
-		pIndexedAttribs->size = pIndexedAttribs->count;
-		decodeIndexedAttribMeta(dataByteString, pIndexedAttribs);
-		decodeIndexedAttribs(pCtx, dataByteString, pIndexedAttribs);
-	}
-	if (pHeader->objCount) {
-		*ppObjArr = pCtx->alloc.fpCalloc(pHeader->objCount, sizeof(StucObject));
-		PIX_ERR_ASSERT("", pHeader->usgCount >= 0);
-		bool usesUsg = pHeader->usgCount > 0 && !forEdit;
-		for (I32 i = 0; i < pHeader->objCount; ++i) {
-			//usgUsg is passed here to indicate that an extra vert
-			//attrib should be created. This would be used later to mark a verts
-			//respective usg.
-			err = loadObj(pCtx, *ppObjArr + i, dataByteString, usesUsg);
-			if (err != PIX_ERR_SUCCESS) {
-				return err;
-			}
-		}
-	}
-	else {
-		return PIX_ERR_ERROR;
-	}
-
-	if (pHeader->usgCount) {
-		*ppUsgArr = pCtx->alloc.fpCalloc(pHeader->usgCount, sizeof(StucUsg));
-		*ppFlatCutoffArr = pCtx->alloc.fpCalloc(pHeader->flatCutoffCount, sizeof(StucObject));
-		for (I32 i = 0; i < pHeader->flatCutoffCount; ++i) {
-			err = loadObj(pCtx, *ppFlatCutoffArr + i, dataByteString, false);
-			if (err != PIX_ERR_SUCCESS) {
-				return err;
-			}
-		}
-		for (I32 i = 0; i < pHeader->usgCount; ++i) {
-			//usgs themselves don't need a usg attrib, so false is passed
-			err = loadObj(pCtx, &(*ppUsgArr)[i].obj, dataByteString, false);
-			if (err != PIX_ERR_SUCCESS) {
-				return err;
-			}
-			err = isDataNameInvalid(dataByteString, "FC");
-			if (err != PIX_ERR_SUCCESS) {
-				return err;
-			}
-			bool hasFlatCutoff = false;
-			stucDecodeValue(dataByteString, (U8 *)&hasFlatCutoff, 8);
-			if (hasFlatCutoff) {
-				I32 cutoffIdx = 0;
-				stucDecodeValue(dataByteString, (U8 *)&cutoffIdx, 32);
-				PIX_ERR_ASSERT("",
-					cutoffIdx >= 0 &&
-					cutoffIdx < pHeader->flatCutoffCount
-				);
-				(*ppUsgArr)[i].pFlatCutoff = *ppFlatCutoffArr + cutoffIdx;
-			}
-		}
-	}
-	return PIX_ERR_SUCCESS;
-}
-
-StucErr stucLoadStucFile(
-	StucContext pCtx,
-	const char *filePath,
-	I32 *pObjCount,
-	StucObject **ppObjArr,
-	I32 *pUsgCount,
-	StucUsg **ppUsgArr,
-	I32 *pFlatCutoffCount,
-	StucObject **ppFlatCutoffArr,
-	bool forEdit,
-	StucAttribIndexedArr *pIndexedAttribs
-) {
-	StucErr err = PIX_ERR_SUCCESS;
-	ByteString headerByteString = {0};
-	ByteString dataByteString = {0};
-	void *pFile = NULL;
-	U8 *dataByteStringRaw = NULL;
-	printf("Loading STUC file: %s\n", filePath);
-	err = pCtx->io.fpOpen(&pFile, filePath, 1, &pCtx->alloc);
-	PIX_ERR_THROW_IFNOT(err, "", 0);
-	I16 headerSize = 0;
-	err = pCtx->io.fpRead(pFile, (U8 *)&headerSize, 2);
-	PIX_ERR_THROW_IFNOT(err, "", 0);
-	printf("Stuc File Header Size: %d\n", headerSize);
-	printf("Header is %d bytes\n", headerSize);
-	headerByteString.pString = pCtx->alloc.fpMalloc(headerSize);
-	printf("Reading header\n");
-	err = pCtx->io.fpRead(pFile, headerByteString.pString, headerSize);
-	PIX_ERR_THROW_IFNOT(err, "", 0);
-	printf("Decoding header\n");
-	StucHeader header = decodeStucHeader(&headerByteString, pIndexedAttribs);
-	PIX_ERR_THROW_IFNOT_COND(
-		err,
-		!strncmp(header.format, "UV Stucco Map File", MAP_FORMAT_NAME_MAX_LEN),
-		"map file is corrupt",
-		0
-	);
-	PIX_ERR_THROW_IFNOT_COND(
-		err, 
-		header.version == STUC_MAP_VERSION,
-		"map file version not supported",
-		0
-	);
-	dataByteStringRaw = pCtx->alloc.fpMalloc(header.dataSize);
-	uLong dataSizeUncompressed = (uLong)header.dataSize;
-	printf("Reading data\n");
-	err = pCtx->io.fpRead(pFile, dataByteStringRaw, (I32)header.dataSizeCompressed);
-	PIX_ERR_THROW_IFNOT(err, "", 0);
-	dataByteString.pString = pCtx->alloc.fpMalloc(header.dataSize);
-	printf("Decompressing data\n");
-	I32 zResult = uncompress(
-		dataByteString.pString,
-		&dataSizeUncompressed,
-		dataByteStringRaw,
-		(uLong)header.dataSizeCompressed
-	);
-	switch(zResult) {
-		case Z_OK:
-			printf("Successfully decompressed STUC file data\n");
-			break;
-		case Z_MEM_ERROR:
-			printf("Failed to decompress STUC file data. Memory error\n");
-			break;
-		case Z_BUF_ERROR:
-			printf("Failed to decompress STUC file data. Buffer was too small\n");
-			break;
-	}
-	if (dataSizeUncompressed != header.dataSize) {
-		printf("Failed to load STUC file. Decompressed data size doesn't match header description\n");
-		return PIX_ERR_ERROR;
-	}
-	printf("Decoding data\n");
-	err = decodeStucData(
-		pCtx,
-		&header,
-		&dataByteString,
-		ppObjArr,
-		ppUsgArr,
-		ppFlatCutoffArr,
-		forEdit,
-		pIndexedAttribs
-	);
-	PIX_ERR_THROW_IFNOT(err, "", 0);
-	*pObjCount = header.objCount;
-	*pUsgCount = header.usgCount;
-	*pFlatCutoffCount = header.flatCutoffCount;
-
-	PIX_ERR_CATCH(0, err, ;);
-	if (pFile) {
-		err = pCtx->io.fpClose(pFile);
-	}
-	if (dataByteStringRaw) {
-		pCtx->alloc.fpFree(dataByteStringRaw);
-	}
-	if (headerByteString.pString) {
-		pCtx->alloc.fpFree(headerByteString.pString);
-	}
-	if (dataByteString.pString) {
-		pCtx->alloc.fpFree(dataByteString.pString);
-	}
-	return err;
-}
-
-void stucIoSetCustom(StucContext pCtx, StucIo *pIo) {
-	if (!pIo->fpOpen || !pIo->fpClose || !pIo->fpWrite || !pIo->fpRead) {
-		printf("Failed to set custom IO. One or more functions were NULL");
-		abort();
-	}
-	pCtx->io = *pIo;
-}
-
-void stucIoSetDefault(StucContext pCtx) {
-	pCtx->io.fpOpen = pixioFileOpen;
-	pCtx->io.fpClose = pixioFileClose;
-	pCtx->io.fpWrite = pixioFileWrite;
-	pCtx->io.fpRead = pixioFileRead;
 }
