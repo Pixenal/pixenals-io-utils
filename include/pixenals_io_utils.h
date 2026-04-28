@@ -26,8 +26,8 @@ PixErr pixioFileOpen(
 	const PixalcFPtrs *pAlloc
 );
 PixErr pixioFileGetSize(void *pFile, int64_t *pSize);
-PixErr pixioFileWrite(void *pFile, const unsigned char *data, int32_t dataSize);
-PixErr pixioFileRead(void *pFile, unsigned char *data, int32_t bytesToRead);
+PixErr pixioFileWrite(void *pFile, const void *pData, int32_t dataSize);
+PixErr pixioFileRead(void *pFile, void *pData, int32_t bytesToRead);
 PixErr pixioFileClose(void *pFile);
 int32_t pixioPathMaxGet();
 
@@ -77,10 +77,15 @@ PixErr pixioShmReceive(PixioShmCtx *pCtx, void *pDest);
 typedef struct PixioByteArr {
 	uint8_t *pArr;
 	int64_t size;
-	int64_t nextBitIdx;
 	int64_t byteIdx;
+	int32_t nextBitIdx;
 } PixioByteArr;
 
+void pixioReallocByteArrIfNeeded(
+	const PixalcFPtrs *pAlloc,
+	PixioByteArr *pByteArr,
+	int64_t bitOffset
+);
 void pixioByteArrWrite(
 	const PixalcFPtrs *pAlloc,
 	PixioByteArr *pByteArr,

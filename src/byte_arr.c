@@ -14,8 +14,7 @@ typedef int64_t I64;
 typedef int32_t I32;
 typedef uint8_t U8;
 
-static
-void reallocByteArrIfNeeded(
+void pixioReallocByteArrIfNeeded(
 	const PixalcFPtrs *pAlloc,
 	PixioByteArr *pByteArr,
 	I64 bitOffset
@@ -45,7 +44,7 @@ void pixioByteArrWrite(
 	const void *pData,
 	int32_t bitLen
 ) {
-	reallocByteArrIfNeeded(pAlloc, pByteArr, bitLen);
+	pixioReallocByteArrIfNeeded(pAlloc, pByteArr, bitLen);
 	U8 *pStart = pByteArr->pArr + pByteArr->byteIdx;
 
 	I32 byteLen = getByteLen(bitLen);
@@ -70,7 +69,7 @@ void pixioByteArrWriteStr(
 	I32 bitLen = ((I32)strlen(pStr) + 1) * 8;
 	I32 lengthInBytes = bitLen / 8;
 	//+8 for potential padding
-	reallocByteStringIfNeeded(pAlloc, pByteArr, bitLen + 8);
+	pixioReallocByteArrIfNeeded(pAlloc, pByteArr, bitLen + 8);
 	if (pByteArr->nextBitIdx != 0) {
 		//pad to beginning of next byte
 		pByteArr->nextBitIdx = 0;

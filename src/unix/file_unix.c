@@ -55,7 +55,7 @@ PixErr pixioFileGetSize(void *pFile, int64_t *pSize) {
 
 PixErr pixioFileWrite(
 	void *pFile,
-	const unsigned char *pData,
+	const void *pData,
 	I32 dataSize
 ) {
 	PixErr err = PIX_ERR_SUCCESS;
@@ -72,7 +72,7 @@ PixErr pixioFileWrite(
 
 PixErr pixioFileRead(
 	void *pFile,
-	unsigned char *pData,
+	void *pData,
 	I32 bytesToRead
 ) {
 	PixErr err = PIX_ERR_SUCCESS;

@@ -15,6 +15,7 @@ SPDX-License-Identifier: Apache-2.0
 
 typedef uint32_t U32;
 typedef uint64_t U64;
+typedef uint8_t U8;
 
 typedef struct PlatformContext {
 	HANDLE *pHFile;
@@ -81,13 +82,13 @@ PixErr pixioFileGetSize(void *pFile, int64_t *pSize) {
 
 PixErr pixioFileWrite(
 	void *pFile,
-	const unsigned char *data,
+	const void *pData,
 	int32_t dataSize
 ) {
 	PixErr err = PIX_ERR_SUCCESS;
 	PlatformContext *pState = pFile;
 	DWORD bytesWritten;
-	if (!WriteFile(pState->pHFile, data, dataSize, &bytesWritten, NULL)) {
+	if (!WriteFile(pState->pHFile, pData, dataSize, &bytesWritten, NULL)) {
 		char message[ERR_MESSAGE_MAX_LEN] = {0};
 		snprintf(
 			message,
@@ -105,15 +106,11 @@ PixErr pixioFileWrite(
 	return err;
 }
 
-PixErr pixioFileRead(
-	void *pFile,
-	unsigned char *data,
-	int32_t bytesToRead
-) {
+PixErr pixioFileRead(void *pFile, void *pData, int32_t bytesToRead) {
 	PixErr err = PIX_ERR_SUCCESS;
 	PlatformContext *pState = pFile;
 	DWORD bytesRead;
-	if (!ReadFile(pState->pHFile, data, bytesToRead, &bytesRead, NULL)) {
+	if (!ReadFile(pState->pHFile, pData, bytesToRead, &bytesRead, NULL)) {
 		char message[ERR_MESSAGE_MAX_LEN] = {0};
 		snprintf(
 			message,
