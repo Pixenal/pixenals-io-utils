@@ -75,7 +75,7 @@ PixErr pixioShmReceive(PixioShmCtx *pCtx, void *pDest);
 #define PIXIO_BYTE_ARR_IO_BUF_LEN 34
 
 typedef struct PixioByteArr {
-	uint8_t *pString;
+	uint8_t *pArr;
 	int64_t size;
 	int64_t nextBitIdx;
 	int64_t byteIdx;
