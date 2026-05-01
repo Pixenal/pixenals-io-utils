@@ -25,6 +25,6 @@ PixErr pixioShmPlatOpen(PixioShmCtx *pCtx, const char *pName);
 PixErr pixioShmPlatLock(PixioShmCtx *pCtx);
 PixErr pixioShmPlatUnlock(PixioShmCtx *pCtx);
 PixErr pixioShmPlatCpy(void *, const void *pSrc, I32 size);
-void *pixioShmPlatMutexInit(ShmHeader *pHeader);
+void pixioShmPlatMutexInit(ShmHeader *pHeader);
 void pixioShmPlatMutexDestroy(ShmHeader *pHeader);
 U64 pixioShmPlatTimeGetMilli();

@@ -31,7 +31,9 @@ PixErr pixioFileRead(void *pFile, void *pData, int32_t bytesToRead);
 PixErr pixioFileClose(void *pFile);
 int32_t pixioPathMaxGet();
 
-#define PIXIO_SHM_NAME_MAX_LEN 57
+#define PIXIO_SHM_NAME_USER_MAX_LEN 16
+// v  prefix + user provided name + timestamp(hex) + spacing  v
+#define PIXIO_SHM_NAME_MAX_LEN (5 + 16 + 16 + 2)
 #define PIXIO_SHM_DATA_SIZE (1024 * 1024)
 
 typedef enum PixioShmFlag {
@@ -71,7 +73,7 @@ union ShmFile {
 typedef struct PixioShmCtx {
 	union ShmFile file;
 	union PixioShmAccess access;
-	char name[PIXIO_SHM_NAME_MAX_LEN];
+	char name[PIXIO_SHM_NAME_MAX_LEN + 1];
 	I32 blockSize;
 } PixioShmCtx;
 

@@ -21,24 +21,35 @@ U32 fnvHash(const U8 *value, I32 valueSize, U32 size) {
 }
 
 PixErr pixioShmOpenServer(PixioShmCtx *pCtx, const char *pName, char *pNameOut) {
-	printf("shm - opening server");
 	PixErr err = PIX_ERR_SUCCESS;
 	*pCtx = (PixioShmCtx){0};
-	PIX_ERR_RETURN_IFNOT_COND(err, strnlen(pName, PIXIO_SHM_NAME_MAX_LEN) <= 8, "name is too long");
-	U32 rand = fnvHash((U8 *)&(void *){&err}, sizeof(void *), INT32_MAX);
-	snprintf(pCtx->name, sizeof(pCtx->name), "PIXIO_%s_", pName);
+	PIX_ERR_RETURN_IFNOT_COND(
+		err,
+		strnlen(pName, PIXIO_SHM_NAME_USER_MAX_LEN) <= PIXIO_SHM_NAME_USER_MAX_LEN,
+		"name is too long"
+	);
+	U64 timestamp = pixioShmPlatTimeGetMilli();
+	snprintf(
+		pCtx->name,
+		sizeof(pCtx->name),
+#ifdef WIN32
+		"PIXIO_%s_%llX",
+#else
+		"PIXIO_%s_%lX",
+#endif
+		pName, timestamp
+	);
 
 	err = pixioShmPlatCreate(pCtx);
 	PIX_ERR_RETURN_IFNOT(err, "");
 	ShmHeader header = {0};
 	pixioShmPlatMutexInit(&header);
 	pixioShmPlatCpy(pCtx->access.pBuf, &header, sizeof(header));
-	memcpy(pNameOut, pCtx->name, PIXIO_SHM_NAME_MAX_LEN);
+	memcpy(pNameOut, pCtx->name, sizeof(pCtx->name));
 	return err;
 }
 
 PixErr pixioShmOpenClient(PixioShmCtx *pCtx, const char *pName) {
-	printf("shm - opening client");
 	PixErr err = PIX_ERR_SUCCESS;
 	*pCtx = (PixioShmCtx){0};
 	pixioShmPlatOpen(pCtx, pName);
@@ -122,8 +133,7 @@ PixErr shmWait(
 		PixioShmFlag flag = PIXIO_SHM_NONE;
 		err = shmFlagGet(pCtx, &flag);
 		PIX_ERR_RETURN_IFNOT(err, "");
-		if (cond == WAIT_TILL ? flag == target : flag != target
-		) {
+		if (cond == WAIT_TILL ? flag == target : flag != target) {
 			if (pOut) {
 				*pOut = flag;
 			}
@@ -136,6 +146,8 @@ PixErr shmWait(
 	} while(true);
 	return err;
 }
+
+#define SHM_TIMEOUT 8
 
 //this func should NOT be used alongside pixioShmWrite, only one or the other
 static
@@ -166,7 +178,7 @@ PixErr shmHandshakeServer(PixioShmCtx *pCtx, PixioShmFlag flag) {
 		flag == PIXIO_SHM_BLOCK_START || flag == PIXIO_SHM_BLOCK_END 
 	);
 	shmWriteFlag(pCtx, flag);
-	err = shmWait(pCtx, flag + 1, NULL, 8, WAIT_TILL);
+	err = shmWait(pCtx, flag + 1, NULL, SHM_TIMEOUT, WAIT_TILL);
 	PIX_ERR_RETURN_IFNOT(
 		err,
 		"client failed to acknowledge handshake"
@@ -181,7 +193,7 @@ PixErr shmHandshakeClient(PixioShmCtx *pCtx, PixioShmFlag flag) {
 		"",
 		flag == PIXIO_SHM_BLOCK_START || flag == PIXIO_SHM_BLOCK_END
 	);
-	err = shmWait(pCtx, flag, NULL, 8, WAIT_TILL);
+	err = shmWait(pCtx, flag, NULL, SHM_TIMEOUT, WAIT_TILL);
 	PIX_ERR_RETURN_IFNOT(
 		err,
 		"failed to receive handshake from server"
@@ -192,7 +204,6 @@ PixErr shmHandshakeClient(PixioShmCtx *pCtx, PixioShmFlag flag) {
 }
 
 PixErr pixioShmSend(PixioShmCtx *pCtx, I32 size, I32 desc, const void *pData) {
-	printf("shm - sending");
 	PixErr err = PIX_ERR_SUCCESS;
 	PIX_ERR_ASSERT("invalid size", size > 0);
 	err = shmHandshakeServer(pCtx, PIXIO_SHM_BLOCK_START);
@@ -200,14 +211,14 @@ PixErr pixioShmSend(PixioShmCtx *pCtx, I32 size, I32 desc, const void *pData) {
 	err = pixioShmWrite(pCtx, sizeof(I32), &size);
 	PIX_ERR_RETURN_IFNOT(err, "");
 	PixioShmFlag flag = PIXIO_SHM_NONE;
-	err = shmWait(pCtx, PIXIO_SHM_WRITTEN, &flag, 8, WAIT_TILL_NOT);
+	err = shmWait(pCtx, PIXIO_SHM_WRITTEN, &flag, SHM_TIMEOUT, WAIT_TILL_NOT);
 	PIX_ERR_RETURN_IFNOT_COND(err, flag == PIXIO_SHM_READ,"");
 	err = pixioShmWrite(pCtx, sizeof(I32), &desc);
 	PIX_ERR_RETURN_IFNOT(err, "");
 	I32 written = 0;
 	I32 packetCount = 0;
 	do {
-		err = shmWait(pCtx, PIXIO_SHM_WRITTEN, &flag, 8, WAIT_TILL_NOT);
+		err = shmWait(pCtx, PIXIO_SHM_WRITTEN, &flag, SHM_TIMEOUT, WAIT_TILL_NOT);
 		PIX_ERR_RETURN_IFNOT_COND(err, flag == PIXIO_SHM_READ,"");
 		I32 packetSize = size - written;
 		packetSize = packetSize > PIXIO_SHM_DATA_SIZE ? PIXIO_SHM_DATA_SIZE : packetSize;
@@ -219,7 +230,7 @@ PixErr pixioShmSend(PixioShmCtx *pCtx, I32 size, I32 desc, const void *pData) {
 		}
 	} while(written < size);
 	//printf("sent %d bytes in %d packets\n", size, packetCount);
-	err = shmWait(pCtx, PIXIO_SHM_WRITTEN, &flag, 8, WAIT_TILL_NOT);
+	err = shmWait(pCtx, PIXIO_SHM_WRITTEN, &flag, SHM_TIMEOUT, WAIT_TILL_NOT);
 	PIX_ERR_RETURN_IFNOT_COND(err, flag == PIXIO_SHM_READ, "");
 	shmHandshakeServer(pCtx, PIXIO_SHM_BLOCK_END);
 	PIX_ERR_RETURN_IFNOT(err, "block end handshake failed");
@@ -232,7 +243,7 @@ PixErr pixioShmReceiveInit(PixioShmCtx *pCtx, I32 *pSize, I32 *pDesc, bool *pClo
 	err = shmHandshakeClient(pCtx, PIXIO_SHM_BLOCK_START);
 	PIX_ERR_RETURN_IFNOT(err, "block start handshake failed");
 	PixioShmFlag flag = PIXIO_SHM_NONE;
-	err = shmWait(pCtx, PIXIO_SHM_BLOCK_START_ACK, &flag, 8, WAIT_TILL_NOT);
+	err = shmWait(pCtx, PIXIO_SHM_BLOCK_START_ACK, &flag, SHM_TIMEOUT, WAIT_TILL_NOT);
 	if (flag == PIXIO_SHM_CLOSE) {
 		err = shmWriteFlag(pCtx, PIXIO_SHM_CLOSE_ACK);
 		PIX_ERR_RETURN_IFNOT(err, "");
@@ -247,7 +258,7 @@ PixErr pixioShmReceiveInit(PixioShmCtx *pCtx, I32 *pSize, I32 *pDesc, bool *pClo
 	I32 read = 0;
 	err = shmRead(pCtx, (U8 *)&blockSize, NULL);
 	PIX_ERR_RETURN_IFNOT_COND(err, blockSize > 0, "bad blocksize, reading invalid data?");
-	err = shmWait(pCtx, PIXIO_SHM_READ, &flag, 8, WAIT_TILL_NOT);
+	err = shmWait(pCtx, PIXIO_SHM_READ, &flag, SHM_TIMEOUT, WAIT_TILL_NOT);
 	PIX_ERR_RETURN_IFNOT_COND(err, flag == PIXIO_SHM_WRITTEN,"");
 	I32 desc = 0;
 	err = shmRead(pCtx, (U8 *)&desc, NULL);
@@ -261,12 +272,11 @@ PixErr pixioShmReceiveInit(PixioShmCtx *pCtx, I32 *pSize, I32 *pDesc, bool *pClo
 }
 
 PixErr pixioShmReceive(PixioShmCtx *pCtx, void *pDest) {
-	printf("shm - receiving");
 	PixErr err = PIX_ERR_SUCCESS;
 	I32 read = 0;
 	do {
 		PixioShmFlag flag = PIXIO_SHM_NONE;
-		err = shmWait(pCtx, PIXIO_SHM_READ, &flag, 8, WAIT_TILL_NOT);
+		err = shmWait(pCtx, PIXIO_SHM_READ, &flag, SHM_TIMEOUT, WAIT_TILL_NOT);
 		PIX_ERR_RETURN_IFNOT_COND(err, flag == PIXIO_SHM_WRITTEN,"");
 		I32 size = 0;
 		err = shmRead(pCtx, (U8 *)pDest + read, &size);
@@ -281,14 +291,13 @@ PixErr pixioShmReceive(PixioShmCtx *pCtx, void *pDest) {
 
 static
 PixErr shmClose(PixioShmCtx *pCtx, bool server) {
-	printf("shm - closing");
 	PixErr err = PIX_ERR_SUCCESS;
 	if (server) {
 		err = shmHandshakeServer(pCtx, PIXIO_SHM_BLOCK_START);
 		PIX_ERR_RETURN_IFNOT(err, "");
 		err = shmWriteFlag(pCtx, PIXIO_SHM_CLOSE);
 		PIX_ERR_RETURN_IFNOT(err, "");
-		err = shmWait(pCtx, PIXIO_SHM_CLOSE_ACK, NULL, 8, WAIT_TILL);
+		err = shmWait(pCtx, PIXIO_SHM_CLOSE_ACK, NULL, SHM_TIMEOUT, WAIT_TILL);
 		PIX_ERR_RETURN_IFNOT(err, "");
 	}
 	pixioShmPlatDestroy(pCtx);

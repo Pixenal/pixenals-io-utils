@@ -26,7 +26,7 @@ void pixioShmPlatDestroy(PixioShmCtx *pCtx) {
 	*pCtx = (struct PixioShmCtx){0};
 }
 
-void *pixioShmPlatMutexInit(ShmHeader *pHeader) {
+void pixioShmPlatMutexInit(ShmHeader *pHeader) {
 	pthread_mutex_init((pthread_mutex_t *)pHeader->mutex.posix, NULL);
 }
 
