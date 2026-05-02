@@ -7,19 +7,6 @@ SPDX-License-Identifier: Apache-2.0
 
 #include <../src/shm.h>
 
-static
-U32 fnvHash(const U8 *value, I32 valueSize, U32 size) {
-	PIX_ERR_ASSERT("", value && valueSize > 0 && size > 0);
-	U32 hash = 2166136261;
-	for (I32 i = 0; i < valueSize; ++i) {
-		hash ^= value[i];
-		hash *= 16777619;
-	}
-	hash %= size;
-	PIX_ERR_ASSERT("", hash >= 0);
-	return hash;
-}
-
 PixErr pixioShmOpenServer(PixioShmCtx *pCtx, const char *pName, char *pNameOut) {
 	PixErr err = PIX_ERR_SUCCESS;
 	*pCtx = (PixioShmCtx){0};
@@ -77,6 +64,7 @@ PixErr pixioShmWrite(PixioShmCtx *pCtx, I32 size, const void *pSrc) {
 	return err;
 }
 
+/*
 static
 PixErr shmDataSizeGet(PixioShmCtx *pCtx, I32 *pSize) {
 	PixErr err = PIX_ERR_SUCCESS;
@@ -87,6 +75,7 @@ PixErr shmDataSizeGet(PixioShmCtx *pCtx, I32 *pSize) {
 	pixioShmPlatUnlock(pCtx);
 	return err;
 }
+*/
 
 static
 PixErr shmFlagGet(PixioShmCtx *pCtx, PixioShmFlag *pFlag) {
@@ -161,6 +150,7 @@ PixErr shmWriteFlag(PixioShmCtx *pCtx, PixioShmFlag flag) {
 }
 
 //this func should NOT be used alongside shmRead, only one or the other
+/*
 static
 PixErr shmReadFlag(PixioShmCtx *pCtx, PixioShmFlag *pFlag) {
 	PixErr err = PIX_ERR_SUCCESS;
@@ -169,6 +159,7 @@ PixErr shmReadFlag(PixioShmCtx *pCtx, PixioShmFlag *pFlag) {
 	pixioShmPlatUnlock(pCtx);
 	return err;
 }
+*/
 
 static
 PixErr shmHandshakeServer(PixioShmCtx *pCtx, PixioShmFlag flag) {
@@ -216,7 +207,7 @@ PixErr pixioShmSend(PixioShmCtx *pCtx, I32 size, I32 desc, const void *pData) {
 	err = pixioShmWrite(pCtx, sizeof(I32), &desc);
 	PIX_ERR_RETURN_IFNOT(err, "");
 	I32 written = 0;
-	I32 packetCount = 0;
+	//I32 packetCount = 0;
 	do {
 		err = shmWait(pCtx, PIXIO_SHM_WRITTEN, &flag, SHM_TIMEOUT, WAIT_TILL_NOT);
 		PIX_ERR_RETURN_IFNOT_COND(err, flag == PIXIO_SHM_READ,"");
@@ -226,7 +217,7 @@ PixErr pixioShmSend(PixioShmCtx *pCtx, I32 size, I32 desc, const void *pData) {
 			err = pixioShmWrite(pCtx, packetSize, (U8 *)pData + written);
 			PIX_ERR_RETURN_IFNOT(err, "");
 			written += packetSize;
-			++packetCount;
+			//++packetCount;
 		}
 	} while(written < size);
 	//printf("sent %d bytes in %d packets\n", size, packetCount);
@@ -255,7 +246,6 @@ PixErr pixioShmReceiveInit(PixioShmCtx *pCtx, I32 *pSize, I32 *pDesc, bool *pClo
 	}
 	PIX_ERR_RETURN_IFNOT_COND(err, flag == PIXIO_SHM_WRITTEN, "");
 	I32 blockSize = 0;
-	I32 read = 0;
 	err = shmRead(pCtx, (U8 *)&blockSize, NULL);
 	PIX_ERR_RETURN_IFNOT_COND(err, blockSize > 0, "bad blocksize, reading invalid data?");
 	err = shmWait(pCtx, PIXIO_SHM_READ, &flag, SHM_TIMEOUT, WAIT_TILL_NOT);
