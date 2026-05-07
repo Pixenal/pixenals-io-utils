@@ -18,12 +18,12 @@ void pixioShmPlatDestroy(PixioShmCtx *pCtx) {
 	*pCtx = (struct PixioShmCtx){0};
 }
 
-void pixioShmPlatMutexInit(ShmHeader *pHeader) {
-	pHeader->mutex.pWin = CreateMutex(NULL, 0, NULL);
+void pixioShmPlatMutexInit(PixioShmCtx *pCtx) {
+	pCtx->access.pHeader->pMutex = CreateMutex(NULL, 0, NULL);
 }
 
 void pixioShmPlatMutexDestroy(ShmHeader *pHeader) {
-	CloseHandle(pHeader->mutex.pWin);
+	CloseHandle(pHeader->pMutex);
 }
 
 PixErr pixioShmPlatCreate(PixioShmCtx *pCtx, const char *pName) {
@@ -77,4 +77,8 @@ PixErr pixioShmPlatCpy(void *, const void *pSrc, I32 size) {
 
 U64 pixioShmPlatTimeGetMilli() {
 	return (U64)timeGetTime();
+}
+
+void *pixioShmPlatDataPtr(PixioShmCtx *pCtx) {
+	return (U8 *)pCtx->access.pBuf + sizeof(ShmHeader);
 }

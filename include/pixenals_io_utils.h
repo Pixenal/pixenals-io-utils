@@ -49,13 +49,8 @@ typedef enum PixioShmFlag {
 	PIXIO_SHM_ERROR
 } PixioShmFlag;
 
-union ShmMutex {
-	uint8_t posix[8];
-	void *pWin;
-};
-
 typedef struct ShmHeader{
-	union ShmMutex mutex;
+	void *pMutex;
 	I32 size;
 	PixioShmFlag flag;
 } ShmHeader;

@@ -13,9 +13,11 @@ SPDX-License-Identifier: Apache-2.0
 
 #include <../src/shm.h>
 
+#define UNIX_BUF_SIZE (SHM_BUF_SIZE + sizeof(pthread_mutex_t))
+
 void pixioShmPlatDestroy(PixioShmCtx *pCtx) {
 	if (pCtx->access.pBuf) {
-		munmap(pCtx->access.pBuf, SHM_BUF_SIZE);
+		munmap(pCtx->access.pBuf, UNIX_BUF_SIZE);
 	}
 	if (pCtx->file.posix >= 0) {
 		close(pCtx->file.posix);
@@ -26,22 +28,32 @@ void pixioShmPlatDestroy(PixioShmCtx *pCtx) {
 	*pCtx = (struct PixioShmCtx){0};
 }
 
-void pixioShmPlatMutexInit(ShmHeader *pHeader) {
-	pthread_mutex_init((pthread_mutex_t *)pHeader->mutex.posix, NULL);
+static
+pthread_mutex_t *mutexGet(ShmHeader *pHeader) {
+	return (void *)(pHeader + 1);
+}
+
+void pixioShmPlatMutexInit(PixioShmCtx *pCtx) {
+	pthread_mutex_t *pMutex = mutexGet(pCtx->access.pHeader);
+	*pMutex = (pthread_mutex_t){0};
+	pthread_mutexattr_t attr = {0};
+	pthread_mutexattr_init(&attr);
+	pthread_mutexattr_setpshared(&attr, PTHREAD_PROCESS_SHARED);
+	pthread_mutex_init(pMutex, &attr);
 }
 
 void pixioShmPlatMutexDestroy(ShmHeader *pHeader) {
-	pthread_mutex_destroy((pthread_mutex_t *)pHeader->mutex.posix);
+	pthread_mutex_destroy(mutexGet(pHeader));
 }
 
 PixErr pixioShmPlatCreate(PixioShmCtx *pCtx) {
 	PixErr err = PIX_ERR_SUCCESS;
 	pCtx->file.posix = shm_open(pCtx->name, O_CREAT | O_EXCL | O_RDWR, S_IRUSR | S_IWUSR);
 	PIX_ERR_THROW_IFNOT_COND(err, pCtx->file.posix >= 0, "unable to create file mapping", 0);
-	PIX_ERR_THROW_IFNOT_COND(err, !ftruncate(pCtx->file.posix, SHM_BUF_SIZE), "", 0);
+	PIX_ERR_THROW_IFNOT_COND(err, !ftruncate(pCtx->file.posix, UNIX_BUF_SIZE), "", 0);
 	pCtx->access.pBuf = mmap(
 		NULL,
-		SHM_BUF_SIZE,
+		UNIX_BUF_SIZE,
 		PROT_READ | PROT_WRITE,
 		MAP_SHARED,
 		pCtx->file.posix,
@@ -65,7 +77,7 @@ PixErr pixioShmPlatOpen(PixioShmCtx *pCtx, const char *pName) {
 	PIX_ERR_THROW_IFNOT_COND(err, pCtx->file.posix, "unable to open shm file", 0);
 	pCtx->access.pBuf = mmap(
 		NULL,
-		SHM_BUF_SIZE,
+		UNIX_BUF_SIZE,
 		PROT_READ | PROT_WRITE,
 		MAP_SHARED,
 		pCtx->file.posix,
@@ -80,13 +92,13 @@ PixErr pixioShmPlatOpen(PixioShmCtx *pCtx, const char *pName) {
 
 PixErr pixioShmPlatLock(PixioShmCtx *pCtx) {
 	PixErr err = PIX_ERR_SUCCESS;
-	pthread_mutex_lock((pthread_mutex_t *)pCtx->access.pHeader->mutex.posix);
+	pthread_mutex_lock(mutexGet(pCtx->access.pHeader));
 	return err;
 }
 
 PixErr pixioShmPlatUnlock(PixioShmCtx *pCtx) {
 	PixErr err = PIX_ERR_SUCCESS;
-	pthread_mutex_unlock((pthread_mutex_t *)pCtx->access.pHeader->mutex.posix);
+	pthread_mutex_unlock(mutexGet(pCtx->access.pHeader));
 	return err;
 }
 
@@ -100,4 +112,8 @@ U64 pixioShmPlatTimeGetMilli() {
 	struct timeval time;
 	gettimeofday(&time, NULL);
 	return (U64)time.tv_sec * (U64)1000u + (U64)time.tv_usec / (U64)1000u;
+}
+
+void *pixioShmPlatDataPtr(PixioShmCtx *pCtx) {
+	return (U8 *)pCtx->access.pBuf + sizeof(ShmHeader) + sizeof(pthread_mutex_t);
 }
