@@ -12,8 +12,8 @@ void pixioShmPlatDestroy(PixioShmCtx *pCtx) {
 	if (pCtx->access.pBuf) {
 		UnmapViewOfFile(pCtx->access.pBuf);
 	}
-	if (pCtx->pFile) {
-		CloseHandle(pCtx->pFile);
+	if (pCtx->file.pWin) {
+		CloseHandle(pCtx->file.pWin);
 	}
 	*pCtx = (struct PixioShmCtx){0};
 }
@@ -26,18 +26,18 @@ void pixioShmPlatMutexDestroy(ShmHeader *pHeader) {
 	CloseHandle(pHeader->pMutex);
 }
 
-PixErr pixioShmPlatCreate(PixioShmCtx *pCtx, const char *pName) {
+PixErr pixioShmPlatCreate(PixioShmCtx *pCtx) {
 	PixErr err = PIX_ERR_SUCCESS;
-	pCtx->pFile = CreateFileMapping(
+	pCtx->file.pWin = CreateFileMapping(
 		INVALID_HANDLE_VALUE,
 		NULL,
 		PAGE_READWRITE,
 		0,
 		SHM_BUF_SIZE,
-		pName
+		pCtx->name
 	);
-	PIX_ERR_THROW_IFNOT_COND(err, pCtx->pFile, "unable to create file mapping", 0);
-	pCtx->access.pBuf = MapViewOfFile(pCtx->pFile, FILE_MAP_ALL_ACCESS, 0, 0, SHM_BUF_SIZE);
+	PIX_ERR_THROW_IFNOT_COND(err, pCtx->file.pWin, "unable to create file mapping", 0);
+	pCtx->access.pBuf = MapViewOfFile(pCtx->file.pWin, FILE_MAP_ALL_ACCESS, 0, 0, SHM_BUF_SIZE);
 	PIX_ERR_THROW_IFNOT_COND(err, pCtx->access.pBuf, "unable to access shared memory", 0);
 	PIX_ERR_CATCH(0, err,
 		pixioShmPlatDestroy(pCtx);
@@ -47,9 +47,9 @@ PixErr pixioShmPlatCreate(PixioShmCtx *pCtx, const char *pName) {
 
 PixErr pixioShmPlatOpen(PixioShmCtx *pCtx, const char *pName) {
 	PixErr err = PIX_ERR_SUCCESS;
-	pCtx->pFile = OpenFileMapping(FILE_MAP_ALL_ACCESS, FALSE, pName);
-	PIX_ERR_THROW_IFNOT_COND(err, pCtx->pFile, "unable to open file mapping", 0);
-	pCtx->access.pBuf = MapViewOfFile(pCtx->pFile, FILE_MAP_ALL_ACCESS, 0, 0, SHM_BUF_SIZE);
+	pCtx->file.pWin = OpenFileMapping(FILE_MAP_ALL_ACCESS, FALSE, pName);
+	PIX_ERR_THROW_IFNOT_COND(err, pCtx->file.pWin, "unable to open file mapping", 0);
+	pCtx->access.pBuf = MapViewOfFile(pCtx->file.pWin, FILE_MAP_ALL_ACCESS, 0, 0, SHM_BUF_SIZE);
 	PIX_ERR_THROW_IFNOT_COND(err, pCtx->access.pBuf, "unable to access shared memory", 0);
 	PIX_ERR_CATCH(0, err,
 		pixioShmPlatDestroy(pCtx);
@@ -59,7 +59,7 @@ PixErr pixioShmPlatOpen(PixioShmCtx *pCtx, const char *pName) {
 
 PixErr pixioShmPlatLock(PixioShmCtx *pCtx) {
 	PixErr err = PIX_ERR_SUCCESS;
-	WaitForSingleObject(pCtx->access.pHeader->pMutex, INFINITE);shm
+	WaitForSingleObject(pCtx->access.pHeader->pMutex, INFINITE);
 	return err;
 }
 
@@ -69,7 +69,7 @@ PixErr pixioShmPlatUnlock(PixioShmCtx *pCtx) {
 	return err;
 }
 
-PixErr pixioShmPlatCpy(void *, const void *pSrc, I32 size) {
+PixErr pixioShmPlatCpy(void *pDest, const void *pSrc, I32 size) {
 	PixErr err = PIX_ERR_SUCCESS;
 	CopyMemory(pDest, pSrc, size);
 	return err;
