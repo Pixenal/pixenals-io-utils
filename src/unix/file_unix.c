@@ -10,20 +10,15 @@ SPDX-License-Identifier: Apache-2.0
 #include <pixenals_io_utils.h>
 
 typedef int32_t I32;
-
-typedef struct PlatformContext{
-	FILE *pFile;
-	PixalcFPtrs alloc;
-} PlatformContext;
+typedef int64_t I64;
 
 PixErr pixioFileOpen(
-	void **ppFile,
+	PixioFile *pFile,
 	const char *pFilePath,
-	PixioFileOpenType action,
-	const PixalcFPtrs *pAlloc
+	PixioFileOpenType action
 ) {
 	PixErr err = PIX_ERR_SUCCESS;
-	PIX_ERR_ASSERT("", ppFile && pFilePath && pAlloc);
+	PIX_ERR_ASSERT("", pFilePath);
 	PIX_ERR_ASSERT("", action == 0 || action == 1);
 	char *mode = "  ";
 	switch (action) {
@@ -36,32 +31,27 @@ PixErr pixioFileOpen(
 		default:
 			PIX_ERR_RETURN(err, "Invalid action passed to function\n");
 	}
-	PlatformContext *pState = pAlloc->fpMalloc(sizeof(PlatformContext));
-	*ppFile = pState;
-	pState->alloc = *pAlloc;
-	pState->pFile = fopen(pFilePath, mode);
-	PIX_ERR_RETURN_IFNOT_COND(err, pState->pFile, "");
+	pFile->pFile = fopen(pFilePath, mode);
+	PIX_ERR_RETURN_IFNOT_COND(err, pFile->pFile, "");
 	return err;
 }
 
-PixErr pixioFileGetSize(void *pFile, int64_t *pSize) {
+PixErr pixioFileGetSize(PixioFile *pFile, I64 *pSize) {
 	PixErr err = PIX_ERR_SUCCESS;
-	PlatformContext *pState = pFile;
 	struct stat info;
-	PIX_ERR_RETURN_IFNOT_COND(err, fstat(pState->pFile->_fileno, &info) != -1, "");
+	PIX_ERR_RETURN_IFNOT_COND(err, fstat(fileno(pFile->pFile), &info) != -1, "");
 	*pSize = info.st_size;
 	return err;
 }
 
 PixErr pixioFileWrite(
-	void *pFile,
+	PixioFile *pFile,
 	const void *pData,
-	I32 dataSize
+	I64 dataSize
 ) {
 	PixErr err = PIX_ERR_SUCCESS;
-	PlatformContext *pState = pFile;
-	PIX_ERR_ASSERT("", pState && pState->pFile && pData && dataSize > 0);
-	I32 bytesWritten = fwrite(pData, 1, dataSize, pState->pFile);
+	PIX_ERR_ASSERT("", pFile && pFile->pFile && pData && dataSize > 0);
+	I64 bytesWritten = fwrite(pData, 1, dataSize, pFile->pFile);
 	PIX_ERR_RETURN_IFNOT_COND(
 		err,
 		bytesWritten == dataSize,
@@ -71,14 +61,13 @@ PixErr pixioFileWrite(
 }
 
 PixErr pixioFileRead(
-	void *pFile,
+	PixioFile *pFile,
 	void *pData,
-	I32 bytesToRead
+	I64 bytesToRead
 ) {
 	PixErr err = PIX_ERR_SUCCESS;
-	PlatformContext *pState = pFile;
-	PIX_ERR_ASSERT("", pState && pState->pFile && pData && bytesToRead > 0);
-	I32 bytesRead = fread(pData, 1, bytesToRead, pState->pFile);
+	PIX_ERR_ASSERT("", pFile && pFile->pFile && pData && bytesToRead > 0);
+	I64 bytesRead = fread(pData, 1, bytesToRead, pFile->pFile);
 	PIX_ERR_RETURN_IFNOT_COND(
 		err,
 		bytesRead == bytesToRead,
@@ -87,12 +76,10 @@ PixErr pixioFileRead(
 	return err;
 }
 
-PixErr pixioFileClose(void *pFile) {
+PixErr pixioFileClose(PixioFile *pFile) {
 	PixErr err = PIX_ERR_SUCCESS;
-	PlatformContext *pState = pFile;
-	PIX_ERR_ASSERT("", pState && pState->pFile);
-	fclose(pState->pFile);
-	pState->alloc.fpFree(pState);
+	PIX_ERR_ASSERT("", pFile && pFile->pFile);
+	fclose(pFile->pFile);
 	return err;
 }
 

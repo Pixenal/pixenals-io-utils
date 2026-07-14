@@ -7,18 +7,14 @@ SPDX-License-Identifier: Apache-2.0
 
 #include <../src/shm.h>
 
+typedef int64_t I64;
+
 #define ERR_MESSAGE_MAX_LEN 128
 
-typedef struct PlatformContext {
-	HANDLE *pHFile;
-	PixalcFPtrs alloc;
-} PlatformContext;
-
 PixErr pixioFileOpen(
-	void **ppFile,
+	PixioFile *pFile,
 	const char *filePath,
-	PixioFileOpenType action,
-	const PixalcFPtrs *pAlloc
+	PixioFileOpenType action
 ) {
 	PixErr err = PIX_ERR_SUCCESS;
 	DWORD access;
@@ -35,9 +31,7 @@ PixErr pixioFileOpen(
 		default:
 			PIX_ERR_RETURN(err, "Invalid action passed to function\n");
 	}
-	PlatformContext *pState = pAlloc->fpMalloc(sizeof(PlatformContext));
-	pState->alloc = *pAlloc;
-	pState->pHFile = CreateFile(
+	pFile->pFile = CreateFile(
 		filePath,
 		access,
 		false,
@@ -45,20 +39,18 @@ PixErr pixioFileOpen(
 		disposition,
 		FILE_ATTRIBUTE_NORMAL, NULL
 	);
-	if (pState->pHFile == INVALID_HANDLE_VALUE) {
+	if (pFile->pFile == INVALID_HANDLE_VALUE) {
 		char message[ERR_MESSAGE_MAX_LEN] = {0};
 		snprintf(message, ERR_MESSAGE_MAX_LEN, "Win Error: %d\n", GetLastError());
 		PIX_ERR_RETURN(err, message);
 	}
-	*ppFile = pState;
 	return err;
 }
 
-PixErr pixioFileGetSize(void *pFile, int64_t *pSize) {
+PixErr pixioFileGetSize(PixioFile *pFile, I64 *pSize) {
 	PixErr err = PIX_ERR_SUCCESS;
-	PlatformContext *pState = pFile;
 	LARGE_INTEGER size = {0};
-	if (!GetFileSizeEx(pState->pHFile, &size)) {
+	if (!GetFileSizeEx(pFile->pFile, &size)) {
 		char message[ERR_MESSAGE_MAX_LEN] = {0};
 		snprintf(
 			message,
@@ -73,14 +65,13 @@ PixErr pixioFileGetSize(void *pFile, int64_t *pSize) {
 }
 
 PixErr pixioFileWrite(
-	void *pFile,
+	PixioFile *pFile,
 	const void *pData,
-	int32_t dataSize
+	I64 dataSize
 ) {
 	PixErr err = PIX_ERR_SUCCESS;
-	PlatformContext *pState = pFile;
 	DWORD bytesWritten;
-	if (!WriteFile(pState->pHFile, pData, dataSize, &bytesWritten, NULL)) {
+	if (!WriteFile(pFile->pFile, pData, (I32)dataSize, &bytesWritten, NULL)) {
 		char message[ERR_MESSAGE_MAX_LEN] = {0};
 		snprintf(
 			message,
@@ -98,11 +89,10 @@ PixErr pixioFileWrite(
 	return err;
 }
 
-PixErr pixioFileRead(void *pFile, void *pData, int32_t bytesToRead) {
+PixErr pixioFileRead(PixioFile *pFile, void *pData, I64 bytesToRead) {
 	PixErr err = PIX_ERR_SUCCESS;
-	PlatformContext *pState = pFile;
 	DWORD bytesRead;
-	if (!ReadFile(pState->pHFile, pData, bytesToRead, &bytesRead, NULL)) {
+	if (!ReadFile(pFile->pFile, pData, (I64)bytesToRead, &bytesRead, NULL)) {
 		char message[ERR_MESSAGE_MAX_LEN] = {0};
 		snprintf(
 			message,
@@ -114,17 +104,15 @@ PixErr pixioFileRead(void *pFile, void *pData, int32_t bytesToRead) {
 	}
 	PIX_ERR_RETURN_IFNOT_COND(
 		err,
-		(int32_t)bytesRead == bytesToRead,
+		bytesRead == bytesToRead,
 		"Number of bytes read does not match specififed amount\n"
 	);
 	return err;
 }
 
-PixErr pixioFileClose(void *pFile) {
+PixErr pixioFileClose(PixioFile *pFile) {
 	PixErr err = PIX_ERR_SUCCESS;
-	PlatformContext *pState = pFile;
-	bool success = CloseHandle(pState->pHFile);
-	pState->alloc.fpFree(pState);
+	bool success = CloseHandle(pFile->pFile);
 	if (!success) {
 		char message[ERR_MESSAGE_MAX_LEN] = {0};
 		snprintf(message, ERR_MESSAGE_MAX_LEN, "Win error: %d\n", GetLastError());

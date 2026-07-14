@@ -10,8 +10,8 @@ SPDX-License-Identifier: Apache-2.0
 
 #define PIXIO_PATH_MAX 32768
 
-typedef struct {
-	void *file;
+typedef struct PixioFile {
+	void *pFile;
 } PixioFile;
 
 typedef enum PixioFileOpenType {
@@ -19,16 +19,22 @@ typedef enum PixioFileOpenType {
 	PIX_IO_FILE_OPEN_READ
 } PixioFileOpenType;
 
+typedef struct PixioFPtrs {
+	PixErr (*fpOpen)(PixioFile *, const char *, PixioFileOpenType);
+	PixErr (*fpWrite)(PixioFile *, const void *, int64_t);
+	PixErr (*fpRead)(PixioFile *, void *, int64_t);
+	PixErr (*fpClose)(PixioFile *);
+} PixioFPtrs;
+
 PixErr pixioFileOpen(
-	void **ppFile,
+	PixioFile *pFile,
 	const char *filePath,
-	PixioFileOpenType action,
-	const PixalcFPtrs *pAlloc
+	PixioFileOpenType action
 );
-PixErr pixioFileGetSize(void *pFile, int64_t *pSize);
-PixErr pixioFileWrite(void *pFile, const void *pData, int32_t dataSize);
-PixErr pixioFileRead(void *pFile, void *pData, int32_t bytesToRead);
-PixErr pixioFileClose(void *pFile);
+PixErr pixioFileGetSize(PixioFile *pFile, int64_t *pSize);
+PixErr pixioFileWrite(PixioFile *pFile, const void *pData, int64_t dataSize);
+PixErr pixioFileRead(PixioFile *pFile, void *pData, int64_t bytesToRead);
+PixErr pixioFileClose(PixioFile *pFile);
 int32_t pixioPathMaxGet();
 
 #define PIXIO_SHM_NAME_USER_MAX_LEN 16
@@ -60,13 +66,13 @@ union PixioShmAccess {
 	ShmHeader *pHeader;
 };
 
-union ShmFile {
+union PixioShmFile {
 	int64_t posix;
 	void *pWin;
 };
 
 typedef struct PixioShmCtx {
-	union ShmFile file;
+	union PixioShmFile file;
 	union PixioShmAccess access;
 	char name[PIXIO_SHM_NAME_MAX_LEN + 1];
 	I32 blockSize;
