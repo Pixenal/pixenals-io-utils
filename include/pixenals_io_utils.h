@@ -23,6 +23,7 @@ typedef struct PixioFPtrs {
 	PixErr (*fpOpen)(PixioFile *, const char *, PixioFileOpenType);
 	PixErr (*fpWrite)(PixioFile *, const void *, int64_t);
 	PixErr (*fpRead)(PixioFile *, void *, int64_t);
+	PixErr (*fpPosSet)(PixioFile *, int64_t);
 	PixErr (*fpClose)(PixioFile *);
 } PixioFPtrs;
 
@@ -34,6 +35,7 @@ PixErr pixioFileOpen(
 PixErr pixioFileGetSize(PixioFile *pFile, int64_t *pSize);
 PixErr pixioFileWrite(PixioFile *pFile, const void *pData, int64_t dataSize);
 PixErr pixioFileRead(PixioFile *pFile, void *pData, int64_t bytesToRead);
+PixErr pixioFilePosSet(PixioFile *pFile, int64_t pos);
 PixErr pixioFileClose(PixioFile *pFile);
 int32_t pixioPathMaxGet();
 

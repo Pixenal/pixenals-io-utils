@@ -110,6 +110,21 @@ PixErr pixioFileRead(PixioFile *pFile, void *pData, I64 bytesToRead) {
 	return err;
 }
 
+PixErr pixioFilePosSet(PixioFile *pFile, I64 pos) {
+	PixErr err = PIX_ERR_SUCCESS;
+	if (_fseeki64(pFile, pos, SEEK_SET)) {
+		char message[ERR_MESSAGE_MAX_LEN] = {0};
+		snprintf(
+			message,
+			ERR_MESSAGE_MAX_LEN,
+			"Win error: %d\n",
+			GetLastError()
+		);
+		PIX_ERR_RETURN(err, message);
+	}
+	return err;
+}
+
 PixErr pixioFileClose(PixioFile *pFile) {
 	PixErr err = PIX_ERR_SUCCESS;
 	bool success = CloseHandle(pFile->pFile);

@@ -76,6 +76,14 @@ PixErr pixioFileRead(
 	return err;
 }
 
+PixErr pixioFilePosSet(PixioFile *pFile, I64 pos) {
+	PixErr err = PIX_ERR_SUCCESS;
+	if (fseeko64(pFile, pos, SEEK_SET)) {
+		PIX_ERR_RETURN(err, "seek failed");
+	}
+	return err;
+}
+
 PixErr pixioFileClose(PixioFile *pFile) {
 	PixErr err = PIX_ERR_SUCCESS;
 	PIX_ERR_ASSERT("", pFile && pFile->pFile);
