@@ -112,7 +112,7 @@ PixErr pixioFileRead(PixioFile *pFile, void *pData, I64 bytesToRead) {
 
 PixErr pixioFilePosSet(PixioFile *pFile, I64 pos) {
 	PixErr err = PIX_ERR_SUCCESS;
-	if (_fseeki64(pFile, pos, SEEK_SET)) {
+	if (_fseeki64(pFile->pFile, pos, SEEK_SET)) {
 		char message[ERR_MESSAGE_MAX_LEN] = {0};
 		snprintf(
 			message,
