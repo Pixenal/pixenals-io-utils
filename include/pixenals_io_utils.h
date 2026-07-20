@@ -4,7 +4,11 @@ SPDX-License-Identifier: Apache-2.0
 */
 
 #pragma once
+#ifdef __cplusplus
+#include <cstdint>
+#else
 #include <stdint.h>
+#endif
 
 #include "../../pixenals-alloc-utils/include/pixenals_alloc_utils.h"
 
