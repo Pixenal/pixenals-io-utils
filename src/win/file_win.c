@@ -34,10 +34,11 @@ PixErr pixioFileOpen(
 	pFile->pFile = CreateFile(
 		filePath,
 		access,
-		false,
+		PIX_IO_FILE_OPEN_READ ? FILE_SHARE_READ : 0,
 		NULL,
 		disposition,
-		FILE_ATTRIBUTE_NORMAL, NULL
+		FILE_ATTRIBUTE_NORMAL,
+		NULL
 	);
 	if (pFile->pFile == INVALID_HANDLE_VALUE) {
 		char message[ERR_MESSAGE_MAX_LEN] = {0};
@@ -112,7 +113,9 @@ PixErr pixioFileRead(PixioFile *pFile, void *pData, I64 bytesToRead) {
 
 PixErr pixioFilePosSet(PixioFile *pFile, I64 pos) {
 	PixErr err = PIX_ERR_SUCCESS;
-	if (_fseeki64(pFile->pFile, pos, SEEK_SET)) {
+	if (SetFilePointer(pFile->pFile, *(I32 *)&pos, (I32 *)((U8 *)&pos + 4), FILE_BEGIN) ==
+	    INVALID_SET_FILE_POINTER
+	) {
 		char message[ERR_MESSAGE_MAX_LEN] = {0};
 		snprintf(
 			message,
