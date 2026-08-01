@@ -44,6 +44,7 @@ void pixioByteArrWrite(
 	const void *pData,
 	int32_t bitLen
 ) {
+	PIX_ERR_ASSERT("", bitLen > 0);
 	pixioReallocByteArrIfNeeded(pAlloc, pByteArr, bitLen);
 	U8 *pStart = pByteArr->pArr + pByteArr->byteIdx;
 
@@ -87,6 +88,7 @@ void pixioByteArrWriteStr(
 }
 
 void pixioByteArrRead(PixioByteArr *pByteArr, void *pData, int32_t bitLen) {
+	PIX_ERR_ASSERT("", bitLen > 0);
 	U8 *pStart = pByteArr->pArr + pByteArr->byteIdx;
 	I32 byteLen = getByteLen(bitLen + pByteArr->nextBitIdx);
 	if (!pByteArr->nextBitIdx && byteLen * 8 == bitLen) {
