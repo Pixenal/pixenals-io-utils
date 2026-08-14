@@ -38,6 +38,13 @@ I32 getByteLen(I32 bitLen) {
 	return byteLen;
 }
 
+void pixioByteArrAlign(PixioByteArr *pByteArr) {
+	if (pByteArr->nextBitIdx) {
+		++pByteArr->byteIdx;
+		pByteArr->nextBitIdx = 0;
+	}
+}
+
 void pixioByteArrWrite(
 	const PixalcFPtrs *pAlloc,
 	PixioByteArr *pByteArr,
