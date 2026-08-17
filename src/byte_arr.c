@@ -114,7 +114,7 @@ void pixioByteArrRead(PixioByteArr *pByteArr, void *pData, int32_t bitLen) {
 	}
 	U8 mask = UCHAR_MAX >> (8 - abs(bitLen - byteLen * 8)) % 8;
 	((U8 *)pData)[byteLen - 1] &= mask;
-	pByteArr->nextBitIdx = pByteArr->nextBitIdx + bitLen;
+	pByteArr->nextBitIdx += bitLen;
 	pByteArr->byteIdx += pByteArr->nextBitIdx / 8;
 	pByteArr->nextBitIdx %= 8;
 }
