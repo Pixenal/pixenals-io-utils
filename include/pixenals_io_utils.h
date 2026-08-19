@@ -107,6 +107,7 @@ void pixioReallocByteArrIfNeeded(
 	int64_t bitOffset
 );
 void pixioByteArrAlign(PixioByteArr *pByteArr);
+void pixioByteArrInc(PixioByteArr *pByteArr, int32_t bitLen);
 void pixioByteArrWrite(
 	const PixalcFPtrs *pAlloc,
 	PixioByteArr *pByteArr,
