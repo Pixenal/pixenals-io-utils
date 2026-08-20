@@ -27,10 +27,10 @@ void pixioByteArrResize(
 }
 
 static
-I32 getByteLen(I32 bitLen) {
-	I32 byteLen = bitLen / 8;
-	byteLen += bitLen != byteLen * 8;
-	return byteLen;
+I64 getByteLen(I64 bitSize) {
+	I64 byteSize = bitSize / 8;
+	byteSize += bitSize != byteSize * 8;
+	return byteSize;
 }
 
 void pixioByteArrAlign(PixioByteArr *pByteArr) {
@@ -40,8 +40,8 @@ void pixioByteArrAlign(PixioByteArr *pByteArr) {
 	}
 }
 
-void pixioByteArrInc(PixioByteArr *pByteArr, I32 bitLen) {
-	pByteArr->nextBitIdx += bitLen;
+void pixioByteArrInc(PixioByteArr *pByteArr, I64 bitSize) {
+	pByteArr->nextBitIdx += bitSize;
 	pByteArr->byteIdx += pByteArr->nextBitIdx / 8;
 	pByteArr->nextBitIdx %= 8;
 }
@@ -50,28 +50,28 @@ void pixioByteArrWrite(
 	const PixalcFPtrs *pAlloc,
 	PixioByteArr *pByteArr,
 	const void *pData,
-	int32_t bitLen
+	I64 bitSize
 ) {
-	PIX_ERR_ASSERT("", bitLen > 0);
-	pixioByteArrResize(pAlloc, pByteArr, bitLen);
+	PIX_ERR_ASSERT("", bitSize > 0);
+	pixioByteArrResize(pAlloc, pByteArr, bitSize);
 	U8 *pStart = pByteArr->pArr + pByteArr->byteIdx;
 
-	I32 byteLenSrc = getByteLen(bitLen);
-	if (!pByteArr->nextBitIdx && byteLenSrc * 8 == bitLen) {
+	I64 byteSizeSrc = getByteLen(bitSize);
+	if (!pByteArr->nextBitIdx && byteSizeSrc * 8 == bitSize) {
 		//start & size are aligned, so just memcpy
-		memcpy(pStart, pData, byteLenSrc);
-		pByteArr->byteIdx += byteLenSrc;
+		memcpy(pStart, pData, byteSizeSrc);
+		pByteArr->byteIdx += byteSizeSrc;
 		return;
 	}
-	I32 byteLenDest = getByteLen(bitLen + pByteArr->nextBitIdx);
+	I64 byteSizeDest = getByteLen(bitSize + pByteArr->nextBitIdx);
 	pStart[0] |= ((U8 *)pData)[0] << pByteArr->nextBitIdx;
-	for (I32 i = 1; i < byteLenDest; ++i) {
-		pStart[i] = i == byteLenSrc ? 0x0 : ((U8 *)pData)[i] << pByteArr->nextBitIdx;
+	for (I64 i = 1; i < byteSizeDest; ++i) {
+		pStart[i] = i == byteSizeSrc ? 0x0 : ((U8 *)pData)[i] << pByteArr->nextBitIdx;
 		U8 nextByte = ((U8 *)pData)[i - 1];
 		nextByte >>= 8 - pByteArr->nextBitIdx;
 		pStart[i] |= nextByte;
 	}
-	pixioByteArrInc(pByteArr, bitLen);
+	pixioByteArrInc(pByteArr, bitSize);
 }
 
 void pixioByteArrWriteStr(
@@ -79,50 +79,50 @@ void pixioByteArrWriteStr(
 	PixioByteArr *pByteArr,
 	const char *pStr
 ) {
-	I32 byteLen = (I32)strlen(pStr) + 1;
-	I32 bitLen = byteLen * 8;
+	I64 byteSize = (I64)strlen(pStr) + 1;
+	I64 bitSize = byteSize * 8;
 
 	//+8 bits for for potential padding
-	pixioByteArrResize(pAlloc, pByteArr, bitLen + 8);
+	pixioByteArrResize(pAlloc, pByteArr, bitSize + 8);
 	if (pByteArr->nextBitIdx != 0) {
 		//pad to beginning of next byte
 		pByteArr->nextBitIdx = 0;
 		++pByteArr->byteIdx;
 	}
-	memcpy(pByteArr->pArr + pByteArr->byteIdx, pStr, byteLen);
-	pByteArr->byteIdx += byteLen;
+	memcpy(pByteArr->pArr + pByteArr->byteIdx, pStr, byteSize);
+	pByteArr->byteIdx += byteSize;
 }
 
-void pixioByteArrRead(PixioByteArr *pByteArr, void *pData, int32_t bitLen) {
-	PIX_ERR_ASSERT("", bitLen > 0);
+void pixioByteArrRead(PixioByteArr *pByteArr, void *pData, I64 bitSize) {
+	PIX_ERR_ASSERT("", bitSize > 0);
 	U8 *pStart = pByteArr->pArr + pByteArr->byteIdx;
-	I32 byteLenDest = getByteLen(bitLen);
-	if (!pByteArr->nextBitIdx && byteLenDest * 8 == bitLen) {
+	I64 byteSizeDest = getByteLen(bitSize);
+	if (!pByteArr->nextBitIdx && byteSizeDest * 8 == bitSize) {
 		//size & start are aligned, so just memcpy
-		memcpy(pData, pByteArr->pArr + pByteArr->byteIdx, byteLenDest);
-		pByteArr->byteIdx += byteLenDest;
+		memcpy(pData, pByteArr->pArr + pByteArr->byteIdx, byteSizeDest);
+		pByteArr->byteIdx += byteSizeDest;
 		return;
 	}
-	I32 byteLenSrc = getByteLen(bitLen + pByteArr->nextBitIdx);
-	for (I32 i = 0; i < byteLenDest; ++i) {
+	I64 byteSizeSrc = getByteLen(bitSize + pByteArr->nextBitIdx);
+	for (I64 i = 0; i < byteSizeDest; ++i) {
 		((U8 *)pData)[i] = pStart[i] >> pByteArr->nextBitIdx;
-		if (i != byteLenSrc - 1) {
+		if (i != byteSizeSrc - 1) {
 			U8 nextByte = pStart[i + 1];
 			nextByte <<= 8 - pByteArr->nextBitIdx;
 			((U8 *)pData)[i] |= nextByte;
 		}
 	}
-	if (bitLen % 8) {
-		U8 mask = UCHAR_MAX >> 8 - bitLen % 8;
-		((U8 *)pData)[byteLenDest - 1] &= mask;
+	if (bitSize % 8) {
+		U8 mask = 0xff >> 8 - bitSize % 8;
+		((U8 *)pData)[byteSizeDest - 1] &= mask;
 	}
-	pixioByteArrInc(pByteArr, bitLen);
+	pixioByteArrInc(pByteArr, bitSize);
 }
 
-void pixioByteArrReadStr(PixioByteArr *pByteArr, char *pStr, int32_t maxLen) {
+void pixioByteArrReadStr(PixioByteArr *pByteArr, char *pStr, I64 maxLen) {
 	pByteArr->byteIdx += pByteArr->nextBitIdx > 0;
 	U8 *pSrc = pByteArr->pArr + pByteArr->byteIdx;
-	I32 i = 0;
+	I64 i = 0;
 	for (; i < maxLen && pSrc[i]; ++i) {
 		pStr[i] = pSrc[i];
 	}

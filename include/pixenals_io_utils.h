@@ -107,17 +107,17 @@ void pixioReallocByteArrIfNeeded(
 	int64_t bitOffset
 );
 void pixioByteArrAlign(PixioByteArr *pByteArr);
-void pixioByteArrInc(PixioByteArr *pByteArr, int32_t bitLen);
+void pixioByteArrInc(PixioByteArr *pByteArr, int64_t bitSize);
 void pixioByteArrWrite(
 	const PixalcFPtrs *pAlloc,
 	PixioByteArr *pByteArr,
 	const void *pData,
-	int32_t bitLen
+	int64_t bitSize
 );
 void pixioByteArrWriteStr(
 	const PixalcFPtrs *pAlloc,
 	PixioByteArr *pByteArr,
 	const char *pStr
 );
-void pixioByteArrRead(PixioByteArr *pByteArr, void *pData, int32_t bitLen);
-void pixioByteArrReadStr(PixioByteArr *pByteArr, char *pStr, int32_t maxLen);
+void pixioByteArrRead(PixioByteArr *pByteArr, void *pData, int64_t bitSize);
+void pixioByteArrReadStr(PixioByteArr *pByteArr, char *pStr, int64_t maxLen);
