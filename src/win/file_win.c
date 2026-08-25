@@ -62,6 +62,7 @@ PixErr pixioFileGetSize(PixioFile *pFile, I64 *pSize) {
 		PIX_ERR_RETURN(err, message);
 	}
 	*pSize = size.QuadPart;
+	PIX_ERR_ASSERT("", *pSize >= 0);
 	return err;
 }
 

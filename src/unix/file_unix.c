@@ -41,6 +41,7 @@ PixErr pixioFileGetSize(PixioFile *pFile, I64 *pSize) {
 	struct stat info;
 	PIX_ERR_RETURN_IFNOT_COND(err, fstat(fileno(pFile->pFile), &info) != -1, "");
 	*pSize = info.st_size;
+	PIX_ERR_ASSERT("", *pSize >= 0);
 	return err;
 }
 
