@@ -23,7 +23,7 @@ void pixioByteArrResize(
 	PIX_ERR_ASSERT("", bitCount <= pByteArr->size * 8);
 	bitCount += bitOffset;
 	I64 byteCount = bitCount / 8 + (bitCount % 8 != 0);
-	PIXALC_DYN_ARR_RESIZE_ZERO(U8, pAlloc, pByteArr, byteCount);
+	PIXALC_DYN_ARR_RESIZE_ZERO(pAlloc, pByteArr, byteCount);
 }
 
 static
